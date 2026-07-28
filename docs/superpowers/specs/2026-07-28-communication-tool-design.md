@@ -446,9 +446,14 @@ no después.
    dominio, la migración deja de ser una variable de entorno.
 2. **`sendMessage` suma `kind` y devuelve `{ messageId }`.** El id es lo que
    habilita correlacionar respuestas.
-3. **La clave única de `message_log` no puede ser `telegram_update_id`.** Debe
-   ser un `external_message_id` genérico que el adapter de comm-tool también
-   pueda llenar.
+3. **La clave única de `message_log` no puede ser `telegram_update_id`.**
+   Acordado con el chat de GymTracker el 2026-07-28: `external_message_id`
+   genérico más `transport` (`telegram | comm-tool | web`), con el índice
+   único sobre **`(transport, external_message_id)`**, y `telegram_update_id`
+   nullable y sin unicidad, como dato crudo. El compuesto evita apostar a que
+   dos espacios de ids no coordinados (enteros de Telegram hoy, UUIDs de
+   comm-tool mañana) nunca colisionen, y es el mismo estilo que usa comm-tool
+   con `(bot_id, provider_update_id)` y `(app_id, idempotency_key)`.
 4. **El cron de las 22:00 en Vercel Hobby se dispara entre las 22:00 y las
    22:59.** Hobby limita a una ejecución por día, solo en UTC, y reparte la
    carga dentro de la hora indicada. O se acepta el jitter, o se espera la
