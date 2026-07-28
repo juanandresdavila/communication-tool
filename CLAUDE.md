@@ -50,6 +50,22 @@ está vacío a propósito.
   convierte ese error de producción en un error de `bun run typecheck`. No
   cambiar a `bundler` ni a `Preserve`: la resolución laxa es justamente lo que
   esconde el bug.
+- **El preset de Hono de Vercel elige el entrypoint por convención, y es
+  frágil.** Dos reglas que hay que respetar o el deploy rompe en runtime
+  mientras todo pasa localmente:
+  1. **No puede existir `src/app.ts`.** El preset lo prefiere sobre
+     `src/index.ts` y lo ejecuta como handler, aunque no tenga default export.
+     Por eso la factory vive en `src/create-app.ts`.
+  2. **`src/index.ts` tiene que importar `hono`.** El preset rechaza cualquier
+     entrypoint que no lo haga (`No entrypoint found which imports hono`). De
+     ahí el `import type { Hono }` y la anotación `const app: Hono`: no es
+     decorativo, sin eso no buildea.
+
+  Para verificarlo sin deployar: `bun --bun x vercel build --yes` y mirar que
+  `.vercel/output/functions/index.func/.vc-config.json` diga
+  `"handler": "src/index.js"`.
+- **El CLI de Vercel necesita `bun --bun x vercel`**, no `vercel` a secas: el
+  shebang del binario pide `node`, que no está instalado.
 - **TypeScript fijado en `^6`.** `bun add -d typescript` trae la 7, que es el
   port nativo a Go, y `typescript-eslint` todavía no soporta su API: el lint
   falla entero. No subir a 7 hasta que typescript-eslint lo anuncie.
