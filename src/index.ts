@@ -1,6 +1,6 @@
-import { createApp } from './app'
-import { createDb } from './db/client'
-import { parseEnv } from './env'
+import { createApp } from './app.js'
+import { createDb } from './db/client.js'
+import { parseEnv } from './env.js'
 
 // Único lugar del servicio que lee process.env.
 const env = parseEnv(process.env)

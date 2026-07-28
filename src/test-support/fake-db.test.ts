@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createFakeDb } from './fake-db'
+import { createFakeDb } from './fake-db.js'
 
 describe('createFakeDb', () => {
   it('por defecto responde al ping', async () => {

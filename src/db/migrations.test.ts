@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pendingMigrations, sortMigrationNames } from './migrations'
+import { pendingMigrations, sortMigrationNames } from './migrations.js'
 
 describe('sortMigrationNames', () => {
   it('ordena por número, no alfabéticamente por el nombre suelto', () => {

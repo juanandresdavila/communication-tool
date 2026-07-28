@@ -2,8 +2,8 @@ import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Client } from '@neondatabase/serverless'
-import { parseEnv } from '../env'
-import { pendingMigrations } from './migrations'
+import { parseEnv } from '../env.js'
+import { pendingMigrations } from './migrations.js'
 
 // NO usar import.meta.dir: existe en Bun pero no cuando Vitest importa este
 // módulo, y el test de integración lo importa. fileURLToPath anda en los dos.

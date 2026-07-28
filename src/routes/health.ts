@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Db } from '../db/client'
+import type { Db } from '../db/client.js'
 
 export function healthRoutes(db: Db): Hono {
   const rutas = new Hono()

@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
-import type { Db } from './db/client'
-import { healthRoutes } from './routes/health'
+import type { Db } from './db/client.js'
+import { healthRoutes } from './routes/health.js'
 
 export interface Deps {
   db: Db

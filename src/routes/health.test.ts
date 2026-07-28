@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createApp } from '../app'
-import { createFakeDb } from '../test-support/fake-db'
+import { createApp } from '../app.js'
+import { createFakeDb } from '../test-support/fake-db.js'
 
 describe('GET /health', () => {
   it('responde 200 sin despertar a la base', async () => {

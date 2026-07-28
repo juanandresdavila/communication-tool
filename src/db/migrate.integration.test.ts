@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client } from '@neondatabase/serverless'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { migrate } from './migrate'
+import { migrate } from './migrate.js'
 
 // Se salta sin DATABASE_URL para que CI quede verde sin base.
 // El ?? '' evita el non-null assertion, que typescript-eslint rechaza.

@@ -42,6 +42,14 @@ está vacío a propósito.
 
 ## Gotchas del tooling
 
+- **Los imports relativos llevan `.js`, siempre**: `import { x } from './foo.js'`
+  aunque el archivo sea `foo.ts`. Bun y Vitest resuelven sin extensión, pero
+  Vercel transpila a `.js` y los corre con el resolver ESM de Node, que la
+  **exige**: sin ella el deploy tira `ERR_MODULE_NOT_FOUND` en runtime con
+  todos los tests en verde. Por eso el tsconfig usa `"module": "nodenext"`, que
+  convierte ese error de producción en un error de `bun run typecheck`. No
+  cambiar a `bundler` ni a `Preserve`: la resolución laxa es justamente lo que
+  esconde el bug.
 - **TypeScript fijado en `^6`.** `bun add -d typescript` trae la 7, que es el
   port nativo a Go, y `typescript-eslint` todavía no soporta su API: el lint
   falla entero. No subir a 7 hasta que typescript-eslint lo anuncie.
