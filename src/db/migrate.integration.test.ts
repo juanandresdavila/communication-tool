@@ -1,0 +1,55 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { Client } from '@neondatabase/serverless'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { migrate } from './migrate'
+
+// Se salta sin DATABASE_URL para que CI quede verde sin base.
+// El ?? '' evita el non-null assertion, que typescript-eslint rechaza.
+const DATABASE_URL = process.env.DATABASE_URL ?? ''
+const correr = DATABASE_URL ? describe : describe.skip
+
+correr('migrate contra una base real', () => {
+  let dir: string
+
+  async function limpiar() {
+    const client = new Client(DATABASE_URL)
+    await client.connect()
+    await client.query('DROP TABLE IF EXISTS _migration_smoke')
+    await client.query(
+      "DELETE FROM schema_migrations WHERE name = '0001_smoke.sql'",
+    )
+    await client.end()
+  }
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'ct-migrations-'))
+    await writeFile(
+      join(dir, '0001_smoke.sql'),
+      'CREATE TABLE _migration_smoke (id int PRIMARY KEY);',
+    )
+    await limpiar()
+  })
+
+  afterAll(async () => {
+    await limpiar()
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('aplica las pendientes y es idempotente al repetir', async () => {
+    const primera = await migrate(dir)
+    expect(primera).toEqual(['0001_smoke.sql'])
+
+    const segunda = await migrate(dir)
+    expect(segunda).toEqual([])
+
+    const client = new Client(DATABASE_URL)
+    await client.connect()
+    const { rows } = await client.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM information_schema.tables WHERE table_name = '_migration_smoke'",
+    )
+    await client.end()
+    expect(rows[0]?.count).toBe('1')
+  }, 30_000)
+})
