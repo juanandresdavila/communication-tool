@@ -103,6 +103,16 @@ integración de migraciones se saltea solo si no hay `DATABASE_URL`.
 Al verificar a mano, **no encadenar con pipes**: `bun run lint | tail` devuelve
 el exit code de `tail` y tapa el fallo. Usar `set -e` y comandos sueltos.
 
+**Para simular CI (sin base), usar `DATABASE_URL='' bun run test`**, no
+`env -u DATABASE_URL`: bun recarga `.env` desde el archivo, así que desasignar
+la variable no hace nada y una variable explícita vacía sí gana. Con la
+simulación correcta tienen que verse 2 archivos salteados.
+
+**Los tests de integración construyen sus clientes dentro de `beforeAll`, no
+en el scope del `describe`.** Vitest evalúa el cuerpo de un `describe.skip`
+para recolectar los tests: un `createSql('')` en el scope explota en el import
+y tumba CI antes de poder saltear nada.
+
 ## Migraciones
 
 Archivos `migrations/NNNN_snake_case.sql`, aplicados en orden, cada uno en su

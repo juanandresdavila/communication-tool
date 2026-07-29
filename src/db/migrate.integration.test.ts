@@ -1,6 +1,7 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Client } from '@neondatabase/serverless'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { migrate } from './migrate.js'
@@ -18,15 +19,33 @@ correr('migrate contra una base real', () => {
     await client.connect()
     await client.query('DROP TABLE IF EXISTS _migration_smoke')
     await client.query(
-      "DELETE FROM schema_migrations WHERE name = '0001_smoke.sql'",
+      "DELETE FROM schema_migrations WHERE name = '9999_smoke.sql'",
     )
     await client.end()
   }
 
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), 'ct-migrations-'))
+
+    // El directorio temporal tiene que incluir las migraciones REALES, no solo
+    // la de humo: la base ya las tiene aplicadas, y pendingMigrations aborta —
+    // con razón — si encuentra en la base una migración que no está en disco.
+    const reales = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      'migrations',
+    )
+    for (const archivo of await readdir(reales)) {
+      if (archivo.endsWith('.sql')) {
+        await copyFile(join(reales, archivo), join(dir, archivo))
+      }
+    }
+
+    // 9999 para que quede después de cualquier migración real, presente o
+    // futura, y no dispare el chequeo de orden.
     await writeFile(
-      join(dir, '0001_smoke.sql'),
+      join(dir, '9999_smoke.sql'),
       'CREATE TABLE _migration_smoke (id int PRIMARY KEY);',
     )
     await limpiar()
@@ -39,7 +58,7 @@ correr('migrate contra una base real', () => {
 
   it('aplica las pendientes y es idempotente al repetir', async () => {
     const primera = await migrate(dir)
-    expect(primera).toEqual(['0001_smoke.sql'])
+    expect(primera).toEqual(['9999_smoke.sql'])
 
     const segunda = await migrate(dir)
     expect(segunda).toEqual([])
