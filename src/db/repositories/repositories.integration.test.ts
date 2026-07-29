@@ -1,6 +1,12 @@
 import { Client } from '@neondatabase/serverless'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createSql } from '../client.js'
+import type {
+  AppsRepo,
+  BotsRepo,
+  ContactsRepo,
+  LinkCodesRepo,
+} from '../ports.js'
 import { createAppsRepo } from './apps.js'
 import { createBotsRepo } from './bots.js'
 import { createContactsRepo } from './contacts.js'
@@ -13,11 +19,13 @@ const SLUG_APP = '_test_app'
 const SLUG_BOT = '_test_bot'
 
 correr('repositorios contra una base real', () => {
-  const sql = createSql(DATABASE_URL)
-  const apps = createAppsRepo(sql)
-  const bots = createBotsRepo(sql)
-  const contacts = createContactsRepo(sql)
-  const linkCodes = createLinkCodesRepo(sql)
+  // Los repositorios se construyen en beforeAll, NO en el scope del describe:
+  // Vitest evalúa el cuerpo de un describe.skip para recolectar los tests, así
+  // que un createSql('') acá explotaría en CI antes de poder saltear nada.
+  let apps: AppsRepo
+  let bots: BotsRepo
+  let contacts: ContactsRepo
+  let linkCodes: LinkCodesRepo
   let appId = ''
 
   async function limpiar() {
@@ -28,6 +36,12 @@ correr('repositorios contra una base real', () => {
   }
 
   beforeAll(async () => {
+    const sql = createSql(DATABASE_URL)
+    apps = createAppsRepo(sql)
+    bots = createBotsRepo(sql)
+    contacts = createContactsRepo(sql)
+    linkCodes = createLinkCodesRepo(sql)
+
     await limpiar()
     const c = new Client(DATABASE_URL)
     await c.connect()
