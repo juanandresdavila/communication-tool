@@ -96,13 +96,10 @@ async function vincular(
   if (!candidato || candidato.appId !== bot.appId) {
     return 'Ese código no existe. Generá uno nuevo desde la app.'
   }
-  if (candidato.usedAt !== null) {
-    return 'Ese código ya se usó. Generá uno nuevo desde la app.'
-  }
-  if (new Date(candidato.expiresAt) <= deps.now()) {
-    return 'Ese código está vencido. Generá uno nuevo desde la app.'
-  }
-
+  // El estado del CONTACTO se mira antes que el del código, y el orden
+  // importa: después de una vinculación exitosa el código queda usado, así que
+  // repetir el comando caería en "ya se usó" — un mensaje confuso para alguien
+  // que solo mandó el mismo mensaje dos veces.
   const existente = await deps.contacts.findByExternalId(
     bot.appId,
     'telegram',
@@ -113,6 +110,13 @@ async function vincular(
   }
   if (existente) {
     return 'Este chat ya está vinculado a otra cuenta. Desvinculala primero desde la app.'
+  }
+
+  if (candidato.usedAt !== null) {
+    return 'Ese código ya se usó. Generá uno nuevo desde la app.'
+  }
+  if (new Date(candidato.expiresAt) <= deps.now()) {
+    return 'Ese código está vencido. Generá uno nuevo desde la app.'
   }
 
   const canjeado = await deps.linkCodes.redeem(code, deps.now())
