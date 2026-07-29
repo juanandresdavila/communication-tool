@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src", "*.ts", "*.mjs"]
+  "include": ["src", "scripts", "*.ts", "*.mjs"]
 }

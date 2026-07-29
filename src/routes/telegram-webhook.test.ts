@@ -168,15 +168,37 @@ describe('/vincular', () => {
     expect((await linkCodes.find('ABCDEF'))?.usedAt).toBeNull()
   })
 
-  it('es idempotente si el chat ya está vinculado a ese mismo usuario', async () => {
-    const { server, enviados, linkCodes } = armar({
-      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+  it('repetir el mismo /vincular contesta que ya estabas vinculado', async () => {
+    // Secuencia REAL, no un estado armado a mano: vincular y repetir. Un test
+    // que construye "contacto existente + código sin usar" describe un estado
+    // imposible —si hay contacto, el código se consumió— y por eso no detecta
+    // que el chequeo de `usedAt` se coma la rama de idempotencia.
+    const { server, enviados } = armar({
       codigos: [unLinkCode({ code: 'ABCDEF', appUserId: 'user-1' })],
+    })
+
+    await postear(server, update('/vincular ABCDEF'))
+    await postear(server, update('/vincular ABCDEF'))
+
+    expect(enviados[0]?.text).toMatch(/vinculada/i)
+    expect(enviados[1]?.text).toMatch(/ya estab/i)
+    expect(enviados[1]?.text).not.toMatch(/ya se us/i)
+  })
+
+  it('es idempotente aunque el código figure como usado', async () => {
+    const { server, enviados } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+      codigos: [
+        unLinkCode({
+          code: 'ABCDEF',
+          appUserId: 'user-1',
+          usedAt: '2026-07-28T11:00:00.000Z',
+        }),
+      ],
     })
     await postear(server, update('/vincular ABCDEF'))
 
     expect(enviados[0]?.text).toMatch(/ya estab/i)
-    expect((await linkCodes.find('ABCDEF'))?.usedAt).toBeNull()
   })
 
   it('rechaza vincular un chat que ya pertenece a otra cuenta, sin quemar el código', async () => {
