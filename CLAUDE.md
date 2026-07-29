@@ -10,13 +10,33 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 
 ## Estado del proyecto
 
-Fase 0 — Scaffold **completa**. Hono sobre Bun, runner de migraciones, CI en
-GitHub Actions y `GET /health`. Sin tablas de dominio todavía: `migrations/`
-está vacío a propósito.
+Fase 1 — Identidad **completa** (2026-07-29, verificada end-to-end contra
+producción). Esquema de identidad (`apps`, `bots`, `contacts`, `link_codes`),
+emisión y canje de códigos, autenticación de apps por API key con rotación,
+webhook de Telegram con verificación timing-safe del secreto, `/vincular` con
+sus ramas de rechazo, y respuesta a chats no vinculados. 93 tests.
 
-**Próxima fase:** Fase 1 — Identidad (`apps`, `bots`, `contacts`,
-`link_codes`, webhook de Telegram, `/vincular`). Generar el plan con
+El bot `@gymtrackerjaddbot` está dado de alta con slug `gym`, y su webhook
+apunta a `https://communication-tool-beta.vercel.app/webhooks/telegram/gym`.
+La app `gym-tracker` existe en la base con su `delivery_url` apuntando a un
+endpoint que **todavía no existe** en GymTracker: se construye en la fase 2.
+
+Fase 0 — Scaffold completa: Hono sobre Bun, runner de migraciones, CI, `/health`.
+
+**Próxima fase:** Fase 2 — Entrega (`inbound_messages`, delivery con HMAC,
+reintentos con backoff, `/internal/tick`, replay manual). Generar el plan con
 `superpowers:writing-plans` contra el spec.
+
+## Operación
+
+- **Las variables de entorno en Vercel solo aplican a deploys nuevos.** Cargar
+  una y no redeployar deja el servicio con la vieja: el webhook devolvió 500
+  hasta hacer `vercel redeploy`. Vale cada vez que se sume un bot.
+- **Dar de alta una app y un bot**: `bun run scripts/registrar-app.ts <api-key>`
+  y después registrar el webhook con `setWebhook`, pasando el `secret_token`
+  idéntico al valor de la variable que referencia `bots.webhook_secret_env`.
+  Si difieren en un carácter, Telegram postea y el servicio rechaza con 401
+  sin ninguna pista de por qué.
 
 ## Required reading
 
