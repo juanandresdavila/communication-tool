@@ -4,6 +4,7 @@ import * as z from 'zod'
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'es obligatoria'),
+  INTERNAL_SECRET: z.string().min(1, 'es obligatoria'),
 })
 
 export type Env = z.infer<typeof envSchema>
