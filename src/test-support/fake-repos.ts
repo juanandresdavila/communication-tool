@@ -101,7 +101,12 @@ export function createFakeAppsRepo(
 export function createFakeInboundMessagesRepo(
   inicial: InboundMessage[] = [],
 ): InboundMessagesRepo {
-  const mensajes = [...inicial]
+  // Copias, no referencias: el repositorio real emite SQL y no puede mutar el
+  // objeto que el llamador tiene en la mano. Si el doble lo mutara,
+  // `entregarConReintentoInmediato` leería el contador ya incrementado por su
+  // propia marca de reintento y se saltearía el reintento inmediato — un
+  // reintento que en producción sí ocurre.
+  const mensajes = inicial.map((m) => ({ ...m }))
   let siguienteId = inicial.length + 1
 
   return {
@@ -127,7 +132,9 @@ export function createFakeInboundMessagesRepo(
     },
 
     async findById(id) {
-      return mensajes.find((m) => m.id === id) ?? null
+      // Snapshot, igual que una fila que vuelve de la base.
+      const m = mensajes.find((x) => x.id === id)
+      return m ? { ...m } : null
     },
 
     async claimPendientes(ahora, limite) {
