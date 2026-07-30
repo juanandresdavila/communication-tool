@@ -10,8 +10,10 @@ import type {
 } from './db/ports.js'
 import type { DeliveryClient } from './delivery/client.js'
 import { apiKeyAuth, type ConVariablesDeApp } from './middleware/api-key-auth.js'
+import { internalAuth } from './middleware/internal-auth.js'
 import { contactRoutes } from './routes/contacts.js'
 import { healthRoutes } from './routes/health.js'
+import { internalRoutes } from './routes/internal.js'
 import { linkCodeRoutes } from './routes/link-codes.js'
 import { telegramWebhookRoutes } from './routes/telegram-webhook.js'
 import type { SecretReader } from './secrets.js'
@@ -28,6 +30,7 @@ export interface Deps {
   randomBytes: (n: number) => Uint8Array
   inbound: InboundMessagesRepo
   delivery: DeliveryClient
+  internalSecret: string
   waitUntil: (promesa: Promise<unknown>) => void
   sleep: (ms: number) => Promise<void>
 }
@@ -44,6 +47,12 @@ export function createApp(deps: Deps): Hono {
   // El webhook se autentica con el secreto de Telegram, no con API key:
   // va montado antes y fuera del middleware de apps.
   app.route('/', telegramWebhookRoutes(deps))
+
+  // Rutas internas: las llama el ticker, no una app. Auth por secreto propio.
+  const interno = new Hono()
+  interno.use('/internal/*', internalAuth(deps.internalSecret))
+  interno.route('/', internalRoutes(deps))
+  app.route('/', interno)
 
   // Todo /v1 exige API key. El patrón es '/v1/*' y NO '*': con '*' el
   // middleware corre sobre cualquier ruta no matcheada y una URL inexistente

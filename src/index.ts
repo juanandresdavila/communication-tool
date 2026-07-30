@@ -31,6 +31,7 @@ const app: Hono = createApp({
   randomBytes: (n) => crypto.getRandomValues(new Uint8Array(n)),
   inbound: createInboundMessagesRepo(sql),
   delivery: createDeliveryClient(),
+  internalSecret: env.INTERNAL_SECRET,
   // waitUntil se inyecta en vez de importarse donde se usa: es lo único
   // atado a Vercel en todo el servicio, y autohospedado se reemplaza por
   // `(p) => { void p }` sin tocar una línea de dominio.

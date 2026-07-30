@@ -29,6 +29,7 @@ export function createFakeDeps(over: Partial<Deps> = {}): Deps {
         return { ok: true, status: 200 }
       },
     },
+    internalSecret: 'secreto-interno',
     waitUntil: () => {},
     sleep: async () => {},
     ...over,
