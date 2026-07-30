@@ -10,22 +10,57 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 
 ## Estado del proyecto
 
-Fase 1 — Identidad **completa** (2026-07-29, verificada end-to-end contra
+Fase 2 — Entrega **completa** (2026-07-30, verificada contra producción).
+`inbound_messages` con dedupe por `(bot_id, provider_update_id)`, el webhook
+persistiendo el crudo antes del ack, entrega firmada con HMAC al `delivery_url`
+de la app, backoff de 5 intentos, `/internal/tick` y `/internal/replay/:id`
+detrás de un Bearer propio. 149 tests.
+
+El ticker externo corre en **cron-job.org cada 15 minutos** contra
+`/internal/tick`. Sin él, los intentos 3 a 5 no se disparan: los dos primeros
+ocurren dentro de la invocación del webhook, y en serverless no queda ningún
+proceso vivo entre requests que despierte al resto.
+
+Fase 1 — Identidad completa (2026-07-29, verificada end-to-end contra
 producción). Esquema de identidad (`apps`, `bots`, `contacts`, `link_codes`),
 emisión y canje de códigos, autenticación de apps por API key con rotación,
 webhook de Telegram con verificación timing-safe del secreto, `/vincular` con
-sus ramas de rechazo, y respuesta a chats no vinculados. 93 tests.
+sus ramas de rechazo, y respuesta a chats no vinculados.
 
 El bot `@gymtrackerjaddbot` está dado de alta con slug `gym`, y su webhook
 apunta a `https://communication-tool-beta.vercel.app/webhooks/telegram/gym`.
-La app `gym-tracker` existe en la base con su `delivery_url` apuntando a un
-endpoint que **todavía no existe** en GymTracker: se construye en la fase 2.
 
 Fase 0 — Scaffold completa: Hono sobre Bun, runner de migraciones, CI, `/health`.
 
-**Próxima fase:** Fase 2 — Entrega (`inbound_messages`, delivery con HMAC,
-reintentos con backoff, `/internal/tick`, replay manual). Generar el plan con
-`superpowers:writing-plans` contra el spec.
+**Próxima fase:** Fase 3 — Salientes (`POST /v1/messages`,
+`outbound_messages`, idempotencia por `(app_id, idempotency_key)`). Generar el
+plan con `superpowers:writing-plans` contra el spec.
+
+**La dependencia que no se cierra sola:** el `delivery_url` de `gym-tracker`
+apunta a un endpoint que **todavía no existe** en GymTracker — es su propia
+fase 3. Por eso la entrega se verificó contra `scripts/receptor-de-prueba.ts`,
+que además es el ejemplo mínimo de lo que GymTracker tiene que implementar.
+Hoy no hay ningún contacto vinculado en producción, así que no hay entregas
+en curso.
+
+## Setup en una máquina nueva
+
+Todos los secretos viven en Vercel, así que el `.env` se baja, no se escribe a
+mano:
+
+```bash
+bun install
+bun --bun x vercel link --yes --project communication-tool
+bun --bun x vercel env pull .env --environment=production --yes
+```
+
+Eso trae las cinco variables que hacen falta: `DATABASE_URL`,
+`INTERNAL_SECRET`, `TELEGRAM_TOKEN_GYM`, `TELEGRAM_WEBHOOK_SECRET_GYM` y
+`DELIVERY_SECRET_GYM`. `vercel link` deja además un `.env.local` con un token
+OIDC que no se usa para nada acá y se puede ignorar.
+
+Para verificar que quedó: `bun run test` en verde y `bun run db:migrate`
+diciendo `Sin migraciones pendientes (2 aplicadas).`
 
 ## Operación
 
@@ -37,6 +72,25 @@ reintentos con backoff, `/internal/tick`, replay manual). Generar el plan con
   idéntico al valor de la variable que referencia `bots.webhook_secret_env`.
   Si difieren en un carácter, Telegram postea y el servicio rechaza con 401
   sin ninguna pista de por qué.
+- **`INTERNAL_SECRET` tiene que estar en Production *y* en Preview.** `parseEnv`
+  la exige, y corre al importar el módulo: si falta en Preview, el build pasa
+  igual y el deploy revienta con 500 en el primer request. Hoy las dos
+  comparten valor.
+- **El header del ticker es `Authorization: Bearer <secreto>`**, no un header
+  llamado `Bearer`. Con el nombre mal el servicio no encuentra el header y
+  devuelve 401 sin más pistas. En cron-job.org conviene usar *Import from
+  cURL* en vez de cargar el header a mano.
+- **Inspeccionar entregas** cuando algo no llega:
+
+  ```sql
+  SELECT provider_update_id, delivery_status, delivery_attempts,
+         next_attempt_at, last_error
+  FROM inbound_messages ORDER BY received_at DESC LIMIT 20;
+  ```
+
+  Un `pending` con `next_attempt_at` ya vencido y que no se mueve significa
+  que el ticker no está corriendo. Un `failed` se reprocesa con
+  `POST /internal/replay/:messageId`.
 
 ## Required reading
 
