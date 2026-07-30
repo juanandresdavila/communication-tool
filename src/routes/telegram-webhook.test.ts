@@ -2,9 +2,12 @@ import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
 import type { Contact, LinkCode } from '../db/ports.js'
 import {
+  createFakeAppsRepo,
   createFakeBotsRepo,
   createFakeContactsRepo,
+  createFakeInboundMessagesRepo,
   createFakeLinkCodesRepo,
+  unApp,
   unBot,
   unContacto,
   unLinkCode,
@@ -14,10 +17,22 @@ import { telegramWebhookRoutes } from './telegram-webhook.js'
 const SECRETO = 'secreto-del-webhook'
 const AHORA = new Date('2026-07-28T12:00:00.000Z')
 
-function armar(opts: { contactos?: Contact[]; codigos?: LinkCode[] } = {}) {
+function armar(
+  opts: {
+    contactos?: Contact[]
+    codigos?: LinkCode[]
+    entregaFalla?: boolean
+  } = {},
+) {
   const enviados: { chatId: string; text: string }[] = []
+  const entregados: string[] = []
   const contacts = createFakeContactsRepo(opts.contactos ?? [])
   const linkCodes = createFakeLinkCodesRepo(opts.codigos ?? [])
+  const inbound = createFakeInboundMessagesRepo([])
+
+  // waitUntil ejecuta al toque en los tests: la entrega tiene que haber
+  // terminado cuando el request vuelve, o las aserciones correrían antes.
+  const pendientes: Promise<unknown>[] = []
 
   const server = new Hono()
   server.route(
@@ -26,8 +41,22 @@ function armar(opts: { contactos?: Contact[]; codigos?: LinkCode[] } = {}) {
       bots: createFakeBotsRepo([unBot()]),
       contacts,
       linkCodes,
+      inbound,
+      apps: createFakeAppsRepo([{ hash: 'h', app: unApp() }]),
+      delivery: {
+        async entregar(p) {
+          entregados.push(p.deliveryId)
+          return opts.entregaFalla
+            ? { ok: false, status: 500, error: 'la app respondió 500' }
+            : { ok: true, status: 200 }
+        },
+      },
       secrets: () => SECRETO,
       now: () => AHORA,
+      sleep: async () => {},
+      waitUntil: (p) => {
+        pendientes.push(p)
+      },
       telegram: {
         async sendMessage(_token, chatId, text) {
           enviados.push({ chatId, text })
@@ -37,7 +66,18 @@ function armar(opts: { contactos?: Contact[]; codigos?: LinkCode[] } = {}) {
     }),
   )
 
-  return { server, enviados, contacts, linkCodes }
+  return {
+    server,
+    enviados,
+    entregados,
+    contacts,
+    linkCodes,
+    inbound,
+    /** Espera a que termine lo que quedó en waitUntil. */
+    async drenar() {
+      await Promise.all(pendientes)
+    },
+  }
 }
 
 function update(text: string, chatId = '12345') {
@@ -210,5 +250,67 @@ describe('/vincular', () => {
 
     expect(enviados[0]?.text).toMatch(/otra cuenta/i)
     expect((await linkCodes.find('ABCDEF'))?.usedAt).toBeNull()
+  })
+})
+
+describe('persistencia y entrega', () => {
+  it('guarda el crudo antes de intentar entregar', async () => {
+    const { server, inbound, drenar } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+    })
+    await postear(server, update('banca 4x10 60'))
+    await drenar()
+
+    const guardado = await inbound.findById('msg-1')
+    expect(guardado?.text).toBe('banca 4x10 60')
+    expect(guardado?.appUserId).toBe('user-1')
+    expect(guardado?.raw).toMatchObject({ update_id: 1 })
+  })
+
+  it('descarta un update_id repetido sin entregar dos veces', async () => {
+    const { server, entregados, drenar } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+    })
+
+    await postear(server, update('hola'))
+    await postear(server, update('hola'))
+    await drenar()
+
+    expect(entregados).toHaveLength(1)
+  })
+
+  it('registra como skipped el mensaje de un chat no vinculado', async () => {
+    const { server, inbound, entregados, drenar } = armar()
+    await postear(server, update('hola'))
+    await drenar()
+
+    const guardado = await inbound.findById('msg-1')
+    expect(guardado?.deliveryStatus).toBe('skipped')
+    expect(guardado?.appUserId).toBeNull()
+    expect(entregados).toHaveLength(0)
+  })
+
+  it('no registra ni entrega los comandos de vinculación', async () => {
+    // /vincular es de comm-tool, no de la app: entregarlo sería filtrar un
+    // comando de identidad al dominio de otro.
+    const { server, inbound, entregados, drenar } = armar({
+      codigos: [unLinkCode({ code: 'ABCDEF' })],
+    })
+    await postear(server, update('/vincular ABCDEF'))
+    await drenar()
+
+    expect(await inbound.findById('msg-1')).toBeNull()
+    expect(entregados).toHaveLength(0)
+  })
+
+  it('contesta 200 aunque la entrega falle', async () => {
+    // Un 5xx a Telegram provoca reintentos que ya cubre el backoff propio.
+    const { server, drenar } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+      entregaFalla: true,
+    })
+    const res = await postear(server, update('hola'))
+    await drenar()
+    expect(res.status).toBe(200)
   })
 })

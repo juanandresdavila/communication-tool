@@ -6,17 +6,27 @@ import {
   parseCommand,
   parseTelegramUpdate,
 } from '../channels/telegram/parse-update.js'
-import type { Bot, BotsRepo, ContactsRepo, LinkCodesRepo } from '../db/ports.js'
+import type {
+  Bot,
+  BotsRepo,
+  ContactsRepo,
+  InboundMessagesRepo,
+  LinkCodesRepo,
+} from '../db/ports.js'
+import type { DeliverDeps } from '../delivery/deliver.js'
+import { entregarConReintentoInmediato } from '../delivery/deliver.js'
 import { normalizeLinkCode } from '../identity/link-code.js'
 import type { SecretReader } from '../secrets.js'
 
-export interface TelegramWebhookDeps {
+export interface TelegramWebhookDeps extends DeliverDeps {
   bots: BotsRepo
   contacts: ContactsRepo
   linkCodes: LinkCodesRepo
   telegram: TelegramClient
   secrets: SecretReader
   now: () => Date
+  inbound: InboundMessagesRepo
+  waitUntil: (promesa: Promise<unknown>) => void
 }
 
 const COMANDOS_DE_VINCULACION = new Set(['vincular', 'link'])
@@ -62,14 +72,34 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
       'telegram',
       update.chatId,
     )
+
+    // El crudo se persiste SIEMPRE y antes de cualquier otra cosa: si el
+    // parser de la app o la entrega fallan, el dato no se pierde.
+    const guardado = await deps.inbound.insertIfNew({
+      botId: bot.id,
+      appId: bot.appId,
+      channel: 'telegram',
+      providerUpdateId: update.updateId,
+      externalId: update.chatId,
+      appUserId: contacto?.appUserId ?? null,
+      text: update.text,
+      replyToMessageId: update.replyToMessageId ?? null,
+      raw: crudo,
+      deliveryStatus: contacto ? 'pending' : 'skipped',
+      nextAttemptAt: contacto ? deps.now() : null,
+    })
+
+    // null = ya lo habíamos visto. Telegram reintenta los webhooks lentos y
+    // sin esto cada reintento entregaría el mensaje otra vez.
+    if (!guardado) return c.json({ ok: true })
+
     if (!contacto) {
       await responder(bot.unlinkedMessage)
       return c.json({ ok: true })
     }
 
-    // FASE 2: acá va el registro en inbound_messages y la entrega a la app
-    // con HMAC y reintentos. Por ahora el mensaje de un chat vinculado se
-    // reconoce y se descarta.
+    // El 200 sale ya; la entrega ocurre después de la respuesta.
+    deps.waitUntil(entregarConReintentoInmediato(deps, guardado))
     return c.json({ ok: true })
   })
 

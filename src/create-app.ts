@@ -5,8 +5,10 @@ import type {
   AppsRepo,
   BotsRepo,
   ContactsRepo,
+  InboundMessagesRepo,
   LinkCodesRepo,
 } from './db/ports.js'
+import type { DeliveryClient } from './delivery/client.js'
 import { apiKeyAuth, type ConVariablesDeApp } from './middleware/api-key-auth.js'
 import { contactRoutes } from './routes/contacts.js'
 import { healthRoutes } from './routes/health.js'
@@ -24,6 +26,10 @@ export interface Deps {
   secrets: SecretReader
   now: () => Date
   randomBytes: (n: number) => Uint8Array
+  inbound: InboundMessagesRepo
+  delivery: DeliveryClient
+  waitUntil: (promesa: Promise<unknown>) => void
+  sleep: (ms: number) => Promise<void>
 }
 
 /**
