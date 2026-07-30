@@ -5,6 +5,8 @@ import type {
   BotsRepo,
   Contact,
   ContactsRepo,
+  InboundMessage,
+  InboundMessagesRepo,
   LinkCode,
   LinkCodesRepo,
 } from '../db/ports.js'
@@ -61,12 +63,125 @@ export function unLinkCode(over: Partial<LinkCode> = {}): LinkCode {
   }
 }
 
+export function unMensaje(over: Partial<InboundMessage> = {}): InboundMessage {
+  return {
+    id: 'msg-1',
+    botId: 'bot-1',
+    appId: 'app-1',
+    channel: 'telegram',
+    providerUpdateId: '900001',
+    externalId: '12345',
+    appUserId: 'user-1',
+    text: 'banca 4x10 60',
+    replyToMessageId: null,
+    raw: { update_id: 900_001 },
+    receivedAt: '2026-07-29T12:00:00.000Z',
+    deliveryStatus: 'pending',
+    deliveryAttempts: 0,
+    nextAttemptAt: '2026-07-29T12:00:00.000Z',
+    deliveredAt: null,
+    lastError: null,
+    ...over,
+  }
+}
+
 export function createFakeAppsRepo(
   entradas: { hash: string; app: App }[],
 ): AppsRepo {
   return {
     async findByApiKeyHash(hash) {
       return entradas.find((e) => e.hash === hash)?.app ?? null
+    },
+    async findById(id) {
+      return entradas.find((e) => e.app.id === id)?.app ?? null
+    },
+  }
+}
+
+export function createFakeInboundMessagesRepo(
+  inicial: InboundMessage[] = [],
+): InboundMessagesRepo {
+  const mensajes = [...inicial]
+  let siguienteId = inicial.length + 1
+
+  return {
+    async insertIfNew(input) {
+      const duplicado = mensajes.some(
+        (m) =>
+          m.botId === input.botId &&
+          m.providerUpdateId === input.providerUpdateId,
+      )
+      if (duplicado) return null
+
+      const creado: InboundMessage = {
+        id: `msg-${siguienteId++}`,
+        receivedAt: '2026-07-29T12:00:00.000Z',
+        deliveryAttempts: 0,
+        deliveredAt: null,
+        lastError: null,
+        ...input,
+        nextAttemptAt: input.nextAttemptAt?.toISOString() ?? null,
+      }
+      mensajes.push(creado)
+      return creado
+    },
+
+    async findById(id) {
+      return mensajes.find((m) => m.id === id) ?? null
+    },
+
+    async claimPendientes(ahora, limite) {
+      const elegibles = mensajes
+        .filter(
+          (m) =>
+            m.deliveryStatus === 'pending' &&
+            m.nextAttemptAt !== null &&
+            new Date(m.nextAttemptAt) <= ahora,
+        )
+        .slice(0, limite)
+      // Lease, no incremento: el contador lo mueven las marcas de resultado.
+      const tomados = elegibles.map((m) => ({ ...m }))
+      for (const m of elegibles) {
+        m.nextAttemptAt = new Date(ahora.getTime() + 5 * 60_000).toISOString()
+      }
+      return tomados
+    },
+
+    async marcarEntregado(id, ahora) {
+      const m = mensajes.find((x) => x.id === id)
+      if (!m) return
+      m.deliveryStatus = 'delivered'
+      m.deliveredAt = ahora.toISOString()
+      m.nextAttemptAt = null
+      m.lastError = null
+    },
+
+    async marcarReintento(id, proximoIntento, error) {
+      const m = mensajes.find((x) => x.id === id)
+      if (!m) return
+      m.deliveryStatus = 'pending'
+      m.deliveryAttempts += 1
+      m.nextAttemptAt = proximoIntento.toISOString()
+      m.lastError = error
+    },
+
+    async marcarFallido(id, error) {
+      const m = mensajes.find((x) => x.id === id)
+      if (!m) return
+      m.deliveryStatus = 'failed'
+      m.deliveryAttempts += 1
+      m.nextAttemptAt = null
+      m.lastError = error
+    },
+
+    async reencolar(id, ahora) {
+      const m = mensajes.find((x) => x.id === id)
+      if (!m || m.deliveryStatus !== 'failed') return null
+      m.deliveryStatus = 'pending'
+      m.deliveryAttempts = 0
+      m.nextAttemptAt = ahora.toISOString()
+      m.lastError = null
+      return { ...m }
     },
   }
 }
