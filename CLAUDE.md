@@ -97,6 +97,17 @@ reintentos con backoff, `/internal/tick`, replay manual). Generar el plan con
 - **No usar `import.meta.dir`** en módulos que importen los tests: existe en
   Bun pero no cuando Vitest los carga. Usar
   `dirname(fileURLToPath(import.meta.url))`.
+- **`bun run test` NO carga el `.env`, y por eso los tests de integración se
+  saltean en silencio.** Bun inyecta el `.env` solo cuando el código lo ejecuta
+  *su* runtime; vitest corre bajo node y no lo ve. Medido: `bun --bun x vitest`
+  ve `DATABASE_URL`, `bun x vitest` no; `bun -e` y `bun run src/db/migrate.ts`
+  sí, porque son bun. El síntoma es traicionero: con el `.env` completo la
+  suite sale **verde igual**, salteando los archivos de integración sin decir
+  nada. Para correrlos de verdad hay que pasar la variable explícita:
+
+  ```bash
+  DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" bun run test
+  ```
 - **No usar `Bun.sql` ni `bun test`**, aunque la plantilla de `bun init` los
   sugiera. `Bun.sql` es exclusivo de Bun y rompería el deploy en el runtime
   Node de Vercel; Vitest es lo que usa el resto del ecosistema.
@@ -117,16 +128,22 @@ bun run typecheck   # tsc --noEmit
 bun run db:migrate  # aplica migraciones pendientes
 ```
 
-CI corre lint + typecheck + test en cada PR y push a main. El test de
-integración de migraciones se saltea solo si no hay `DATABASE_URL`.
+CI corre lint + typecheck + test en cada PR y push a main. Los 3 archivos
+`*.integration.test.ts` se saltean solos si no hay `DATABASE_URL` — y también
+si la hay pero no se la pasa explícita, ver el gotcha del `.env`.
+
+`db:migrate` valida su entorno con `parseDatabaseEnv`, que pide **solo**
+`DATABASE_URL`. No usar `parseEnv` ahí: arrastra `INTERNAL_SECRET`, que no
+tiene nada que ver con migrar, y rompe el runner en cualquier entorno que solo
+tenga la cadena de conexión.
 
 Al verificar a mano, **no encadenar con pipes**: `bun run lint | tail` devuelve
 el exit code de `tail` y tapa el fallo. Usar `set -e` y comandos sueltos.
 
-**Para simular CI (sin base), usar `DATABASE_URL='' bun run test`**, no
-`env -u DATABASE_URL`: bun recarga `.env` desde el archivo, así que desasignar
-la variable no hace nada y una variable explícita vacía sí gana. Con la
-simulación correcta tienen que verse 2 archivos salteados.
+**Para simular CI (sin base), usar `DATABASE_URL='' bun run test`.** Tienen que
+verse 3 archivos salteados. `env -u DATABASE_URL` hoy también funciona —medido—
+pero la variable explícita vacía gana en cualquier caso y no depende de si bun
+propaga el `.env` al proceso hijo, que es justo lo que cambia entre versiones.
 
 **Los tests de integración construyen sus clientes dentro de `beforeAll`, no
 en el scope del `describe`.** Vitest evalúa el cuerpo de un `describe.skip`
