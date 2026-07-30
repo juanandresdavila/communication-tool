@@ -2,7 +2,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Client } from '@neondatabase/serverless'
-import { parseEnv } from '../env.js'
+import { parseDatabaseEnv } from '../env.js'
 import { pendingMigrations } from './migrations.js'
 
 // NO usar import.meta.dir: existe en Bun pero no cuando Vitest importa este
@@ -11,7 +11,7 @@ const AQUI = dirname(fileURLToPath(import.meta.url))
 const DIR_POR_DEFECTO = join(AQUI, '..', '..', 'migrations')
 
 export async function migrate(dir: string = DIR_POR_DEFECTO): Promise<string[]> {
-  const env = parseEnv(process.env)
+  const env = parseDatabaseEnv(process.env)
   const client = new Client(env.DATABASE_URL)
   await client.connect()
 
