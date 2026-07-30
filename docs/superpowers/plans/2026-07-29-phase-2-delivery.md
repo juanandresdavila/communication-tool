@@ -2235,7 +2235,9 @@ curl -s -X POST localhost:3987/webhooks/telegram/gym \
 
 Esperado en la terminal del receptor: `ENTREGA OK <uuid>: {"messageId":...,"userId":"local-1","text":"banca 4x10 60",...}`.
 
-**Verificá que el cuerpo NO contenga `99999`**: es el `chat_id`, y la app no tiene que verlo nunca.
+**Verificá que el `chat_id` no aparezca en los campos estructurados**: tiene que venir `userId`, y no un `externalId` ni un `chatId`.
+
+Ojo con la formulación fácil de "que el cuerpo no contenga `99999`": **no se cumple, y está bien que no se cumpla**. El spec manda entregar el `raw` completo (§El contrato y §Qué no es), y el update de Telegram trae `chat.id` adentro. La invariante «la app nunca ve un `chat_id`» es sobre la identidad *resuelta* —la app correlaciona por `userId` y no tiene por qué mirar el `raw`—, no sobre scrubear el payload del proveedor.
 
 - [ ] **Step 6: Probar el dedupe de Telegram**
 
@@ -2318,7 +2320,7 @@ bun -e "import {Client} from '@neondatabase/serverless'; const c=new Client(proc
 - [ ] `DATABASE_URL='' bun run test` deja los archivos de integración salteados y sale con 0.
 - [ ] CI en verde en GitHub.
 - [ ] `bun run db:migrate` reporta `Sin migraciones pendientes (2 aplicadas).`
-- [ ] El receptor local recibe la entrega con firma válida, y el cuerpo **no contiene el `chat_id`**.
+- [ ] El receptor local recibe la entrega con firma válida, y el `chat_id` **no aparece en los campos estructurados** — hay `userId`, no hay `externalId` ni `chatId`. Dentro de `raw` sí viaja, por contrato del spec.
 - [ ] Un `update_id` repetido no produce una segunda entrega.
 - [ ] Cortar el receptor y volver a levantarlo: el `/internal/tick` recupera el mensaje pendiente.
 - [ ] `POST /internal/tick` sin `Authorization` devuelve **401** en producción.
