@@ -30,6 +30,59 @@ describe('createTelegramClient', () => {
     })
   })
 
+  it('manda reply_parameters cuando se responde a un mensaje', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 78 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', 'dale', '55')
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      text: 'dale',
+      reply_parameters: {
+        message_id: 55,
+        // Si el usuario borró el mensaje original, el envío tiene que salir
+        // igual: perder la respuesta por eso sería peor que perder el hilo.
+        allow_sending_without_reply: true,
+      },
+    })
+  })
+
+  it('no manda reply_parameters si no hay a qué responder', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 79 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', 'hola', null)
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      text: 'hola',
+    })
+  })
+
+  it('ignora un replyToMessageId que no es un número', async () => {
+    // Telegram exige un entero. Mandarle basura hace fallar el envío entero;
+    // mandarlo sin reply llega, que es lo que importa.
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 80 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', 'hola', 'no-es-un-numero')
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      text: 'hola',
+    })
+  })
+
   it('falla si Telegram responde con error', async () => {
     const { fake } = fetchQueDevuelve(400, {
       ok: false,
