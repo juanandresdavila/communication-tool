@@ -68,6 +68,11 @@ export interface AppsRepo {
 
 export interface BotsRepo {
   findBySlug(slug: string): Promise<Bot | null>
+  /**
+   * El bot activo de una app en un canal. Devuelve como mucho uno: el índice
+   * único `bots_app_channel_unico` lo garantiza en la base, no acá.
+   */
+  findByAppAndChannel(appId: string, channel: Channel): Promise<Bot | null>
 }
 
 export interface ContactsRepo {
@@ -132,6 +137,69 @@ export interface InboundMessagesRepo {
   marcarFallido(id: string, error: string): Promise<void>
   /** Vuelve a poner en `pending` un mensaje fallido, con el contador en cero. */
   reencolar(id: string, ahora: Date): Promise<InboundMessage | null>
+}
+
+export type OutboundKind = 'reply' | 'notification'
+export type OutboundStatus = 'sending' | 'sent' | 'failed'
+
+export interface OutboundTemplate {
+  name: string
+  vars: Record<string, string>
+}
+
+export interface OutboundMessage {
+  id: string
+  appId: string
+  contactId: string | null
+  appUserId: string
+  channel: Channel
+  kind: OutboundKind
+  text: string
+  template: OutboundTemplate | null
+  replyToMessageId: string | null
+  providerMessageId: string | null
+  status: OutboundStatus
+  error: string | null
+  idempotencyKey: string | null
+  createdAt: string
+}
+
+export interface OutboundMessagesRepo {
+  /**
+   * Reserva el envío y devuelve la fila reservada, o `null` si la clave de
+   * idempotencia ya está tomada por un envío en vuelo o ya concluido.
+   *
+   * Reservar ANTES de mandar es lo que hace que la clave sirva: si la fila se
+   * insertara después del envío, dos reintentos solapados mandarían dos
+   * mensajes y recién ahí chocarían.
+   *
+   * Una fila `failed` sí se puede volver a reservar —el mensaje anterior nunca
+   * salió— y en ese caso **se devuelve con su contenido original**, no con el
+   * del pedido nuevo: la clave identifica al mensaje, así que un reintento
+   * reenvía lo mismo aunque el cuerpo del request haya cambiado.
+   *
+   * Con `idempotencyKey: null` nunca hay conflicto y siempre devuelve fila.
+   */
+  claim(input: {
+    appId: string
+    contactId: string
+    appUserId: string
+    channel: Channel
+    kind: OutboundKind
+    text: string
+    template: OutboundTemplate | null
+    replyToMessageId: string | null
+    idempotencyKey: string | null
+  }): Promise<OutboundMessage | null>
+
+  /** Para contestar el replay con el resultado que ya se había guardado. */
+  findByIdempotencyKey(
+    appId: string,
+    idempotencyKey: string,
+  ): Promise<OutboundMessage | null>
+
+  marcarEnviado(id: string, providerMessageId: string): Promise<void>
+  marcarFallido(id: string, error: string): Promise<void>
 }
 
 export interface LinkCodesRepo {

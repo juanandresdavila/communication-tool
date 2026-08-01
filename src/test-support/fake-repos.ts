@@ -9,6 +9,8 @@ import type {
   InboundMessagesRepo,
   LinkCode,
   LinkCodesRepo,
+  OutboundMessage,
+  OutboundMessagesRepo,
 } from '../db/ports.js'
 
 export function unApp(over: Partial<App> = {}): App {
@@ -82,6 +84,92 @@ export function unMensaje(over: Partial<InboundMessage> = {}): InboundMessage {
     deliveredAt: null,
     lastError: null,
     ...over,
+  }
+}
+
+export function unSaliente(
+  over: Partial<OutboundMessage> = {},
+): OutboundMessage {
+  return {
+    id: 'out-1',
+    appId: 'app-1',
+    contactId: 'contact-1',
+    appUserId: 'user-1',
+    channel: 'telegram',
+    kind: 'reply',
+    text: 'anotado: banca 4x10 60',
+    template: null,
+    replyToMessageId: null,
+    providerMessageId: null,
+    status: 'sending',
+    error: null,
+    idempotencyKey: null,
+    createdAt: '2026-08-01T12:00:00.000Z',
+    ...over,
+  }
+}
+
+export function createFakeOutboundMessagesRepo(
+  inicial: OutboundMessage[] = [],
+): OutboundMessagesRepo {
+  // Copias, no referencias, igual que en el doble de entrantes: el repositorio
+  // real emite SQL y no puede mutar el objeto que el llamador tiene en la mano.
+  const mensajes = inicial.map((m) => ({ ...m }))
+  let siguienteId = inicial.length + 1
+
+  return {
+    async claim(input) {
+      const existente =
+        input.idempotencyKey === null
+          ? undefined
+          : mensajes.find(
+              (m) =>
+                m.appId === input.appId &&
+                m.idempotencyKey === input.idempotencyKey,
+            )
+
+      if (existente) {
+        // Solo lo fallido se vuelve a tomar, y conserva su contenido original.
+        if (existente.status !== 'failed') return null
+        existente.status = 'sending'
+        existente.error = null
+        existente.providerMessageId = null
+        return { ...existente }
+      }
+
+      const creado: OutboundMessage = {
+        id: `out-${siguienteId++}`,
+        providerMessageId: null,
+        status: 'sending',
+        error: null,
+        createdAt: '2026-08-01T12:00:00.000Z',
+        ...input,
+      }
+      mensajes.push(creado)
+      return { ...creado }
+    },
+
+    async findByIdempotencyKey(appId, idempotencyKey) {
+      const m = mensajes.find(
+        (x) => x.appId === appId && x.idempotencyKey === idempotencyKey,
+      )
+      return m ? { ...m } : null
+    },
+
+    async marcarEnviado(id, providerMessageId) {
+      const m = mensajes.find((x) => x.id === id)
+      if (!m) return
+      m.status = 'sent'
+      m.providerMessageId = providerMessageId
+      m.error = null
+    },
+
+    async marcarFallido(id, error) {
+      const m = mensajes.find((x) => x.id === id)
+      if (!m) return
+      m.status = 'failed'
+      m.error = error
+    },
   }
 }
 
@@ -197,6 +285,13 @@ export function createFakeBotsRepo(bots: Bot[]): BotsRepo {
   return {
     async findBySlug(slug) {
       return bots.find((b) => b.slug === slug) ?? null
+    },
+    async findByAppAndChannel(appId, channel) {
+      return (
+        bots.find(
+          (b) => b.appId === appId && b.channel === channel && b.active,
+        ) ?? null
+      )
     },
   }
 }
