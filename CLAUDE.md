@@ -13,18 +13,25 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 > **Lo primero que hay que saber: el webhook del bot NO apunta acá.** Ver
 > §El webhook lo tiene GymTracker, más abajo. Las fases 1 y 2 están
 > implementadas y probadas, pero **inertes en producción**: no les llega un
-> solo update. La fase 3 no depende del webhook y sí funciona.
+> solo update. La fase 3 no depende del webhook y sí funciona — se verificó
+> con envíos reales el 2026-08-02.
 
-Fase 3 — Salientes **implementada** (2026-08-02). `POST /v1/messages` resuelve
-el contacto por `app_user_id`, saca el token del bot de la app y manda por
-Telegram, síncrono. La fila de `outbound_messages` se **reserva antes** del
-envío: por eso `status` tiene un tercer valor, `sending`, que el spec no lista.
-Idempotencia por `(app_id, idempotency_key)`, opt-in: sin clave no se
-deduplica nada. 181 tests, migración `0003` aplicada y verificada.
+Fase 3 — Salientes **completa** (2026-08-02, verificada contra producción).
+`POST /v1/messages` resuelve el contacto por `app_user_id`, saca el token del
+bot de la app y manda por Telegram, síncrono. La fila de `outbound_messages` se
+**reserva antes** del envío: por eso `status` tiene un tercer valor, `sending`,
+que el spec no lista. Idempotencia por `(app_id, idempotency_key)`, opt-in: sin
+clave no se deduplica nada. 181 tests, migración `0003` aplicada.
 
-**Todavía no se verificó un envío real contra producción.** Falta mergear y
-mandar un mensaje de punta a punta. El `POST /v1/messages` no se puede probar
-en local porque el token baja como `[SENSITIVE]` (ver §Setup).
+Verificado con envíos reales al chat de `@gymtrackerjaddbot`: un saliente
+suelto, la misma `idempotencyKey` dos veces —respuestas idénticas, **una sola**
+fila y **un solo** mensaje en el chat—, una respuesta citada, `404 not_linked`
+y `400 invalid_request` con más de 4096 caracteres. Al terminar quedó todo en
+`sent`, nada en `sending`, y el contacto de prueba desvinculado.
+
+**El contacto se creó con un `INSERT` a mano, no con `/vincular`**, porque el
+webhook lo tiene GymTracker. Es la forma de probar salientes mientras dure esa
+situación: el envío solo necesita el token y un contacto, no el webhook.
 
 El `replyToMessageId` viaja en ids **del proveedor**, en las dos direcciones,
 porque el entrante de la fase 2 ya los expone así. La respuesta devuelve los
@@ -176,6 +183,11 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   inactividad y cobra por hora de cómputo: consultar cada pocos segundos para
   esperar un evento la mantiene despierta y se come el presupuesto. Es la misma
   razón por la que el ticker corre cada 15 minutos y no cada 5.
+- **Para probar salientes hace falta un contacto, y `/vincular` no sirve**
+  mientras el webhook sea de GymTracker. Se inserta a mano en `contacts`
+  (`app_id`, `channel='telegram'`, `external_id`=el chat id, `app_user_id`) y
+  se borra después con `DELETE /v1/contacts/:userId`. El chat id propio lo dice
+  `@userinfobot` con un `/start`.
 - **Un saliente trabado en `sending`** es una invocación que murió entre la
   reserva y la marca. Un reintento con la misma clave devuelve `409
   in_progress` a propósito: no se puede saber si el mensaje salió.
