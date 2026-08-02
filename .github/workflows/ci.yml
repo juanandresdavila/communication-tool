@@ -23,3 +23,15 @@ jobs:
 
       # Sin DATABASE_URL: el test de integración de migraciones se saltea solo.
       - run: bun run test
+
+      # `dist/` está commiteado a propósito: bun bloquea los scripts de ciclo
+      # de vida, así que un `prepare` no correría al instalar desde git y el
+      # consumidor recibiría un paquete sin compilar. El precio es que puede
+      # quedar desincronizado con el fuente, y esto lo impide.
+      - name: dist está al día con el fuente
+        run: |
+          bun run build:client
+          git diff --exit-code dist || {
+            echo "::error::dist quedó desincronizado. Corré 'bun run build:client' y commiteá."
+            exit 1
+          }
