@@ -81,6 +81,19 @@ correr('repositorios contra una base real', () => {
     expect(bot?.appId).toBe(appId)
   }, 30_000)
 
+  it('encuentra el bot activo de una app por canal', async () => {
+    const bot = await bots.findByAppAndChannel(appId, 'telegram')
+    expect(bot?.slug).toBe(SLUG_BOT)
+
+    expect(await bots.findByAppAndChannel(appId, 'whatsapp')).toBeNull()
+    expect(
+      await bots.findByAppAndChannel(
+        '00000000-0000-0000-0000-000000000000',
+        'telegram',
+      ),
+    ).toBeNull()
+  }, 30_000)
+
   it('crea, encuentra y borra un contacto', async () => {
     const creado = await contacts.create({
       appId,

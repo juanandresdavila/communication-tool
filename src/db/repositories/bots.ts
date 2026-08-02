@@ -40,5 +40,17 @@ export function createBotsRepo(sql: Sql): BotsRepo {
       const fila = filas[0]
       return fila ? aBot(fila) : null
     },
+
+    async findByAppAndChannel(appId, channel) {
+      const filas = (await sql`
+        SELECT id, app_id, channel, slug, username, token_env,
+               webhook_secret_env, unlinked_message, active
+        FROM bots
+        WHERE app_id = ${appId} AND channel = ${channel} AND active = true
+        LIMIT 1
+      `) as FilaBot[]
+      const fila = filas[0]
+      return fila ? aBot(fila) : null
+    },
   }
 }

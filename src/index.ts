@@ -8,6 +8,7 @@ import { createBotsRepo } from './db/repositories/bots.js'
 import { createContactsRepo } from './db/repositories/contacts.js'
 import { createInboundMessagesRepo } from './db/repositories/inbound-messages.js'
 import { createLinkCodesRepo } from './db/repositories/link-codes.js'
+import { createOutboundMessagesRepo } from './db/repositories/outbound-messages.js'
 import { createDeliveryClient } from './delivery/client.js'
 import { parseEnv } from './env.js'
 import { createSecretReader } from './secrets.js'
@@ -30,6 +31,7 @@ const app: Hono = createApp({
   now: () => new Date(),
   randomBytes: (n) => crypto.getRandomValues(new Uint8Array(n)),
   inbound: createInboundMessagesRepo(sql),
+  outbound: createOutboundMessagesRepo(sql),
   delivery: createDeliveryClient(),
   internalSecret: env.INTERNAL_SECRET,
   // waitUntil se inyecta en vez de importarse donde se usa: es lo único
