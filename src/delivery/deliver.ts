@@ -6,7 +6,7 @@ import type {
 import type { SecretReader } from '../secrets.js'
 import { esperaInmediata, proximoIntentoMs } from './backoff.js'
 import type { DeliveryClient } from './client.js'
-import { headerDeFirma } from './signature.js'
+import { headerDeFirma } from '../client/signature.js'
 
 export const TIMEOUT_ENTREGA_MS = 10_000
 

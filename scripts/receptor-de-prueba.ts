@@ -1,4 +1,4 @@
-import { firmaValida } from '../src/delivery/signature.js'
+import { firmaValida } from '../src/client/signature.js'
 
 const SECRETO = process.env.DELIVERY_SECRET_GYM ?? ''
 if (!SECRETO) throw new Error('falta DELIVERY_SECRET_GYM')
