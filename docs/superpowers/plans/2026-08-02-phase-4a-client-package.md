@@ -4,7 +4,18 @@
 
 **Goal:** Que exista un paquete cliente delgado que implemente la interfaz `Messaging` contra la API HTTP de comm-tool, y una suite de conformidad ejecutable que verifique —no que prometa— que las dos implementaciones son intercambiables.
 
-**Architecture:** El paquete vive en este mismo repo bajo `src/client/`, se compila a `dist/` con un `prepare`, y se consume como **dependencia git** (`github:juanandresdavila/communication-tool#v0.1.0`). No tiene dependencias en runtime: solo `fetch` y `node:crypto`. La suite de conformidad se exporta como **datos, no como tests**: una lista de casos que cada repo engancha a su propio runner, para que el paquete no arrastre Vitest.
+**Architecture:** El paquete vive en este mismo repo bajo `src/client/`, se compila a `dist/` **commiteado en el repo**, y se consume como **dependencia git** (`github:juanandresdavila/communication-tool#v0.1.0`).
+
+> **Por qué `dist/` va commiteado y no se genera con un `prepare`.** Se probó
+> primero con `prepare`, que es el patrón estándar, y **no funciona**: bun
+> bloquea los scripts de ciclo de vida de las dependencias por defecto
+> (`Blocked 1 postinstall`), así que `dist/` nunca se construye y el import
+> falla con `Cannot find module`. Se podría pedirle a cada consumidor que
+> agregue `trustedDependencies`, pero eso apoya el paquete en una conducta
+> específica de bun y en que nadie se olvide. Commitear `dist/` hace que el
+> paquete funcione por copia de archivos, sin ningún script. El precio —que
+> `dist` se desincronice del fuente— lo cubre un paso de CI que reconstruye y
+> falla si hay diferencia. No tiene dependencias en runtime: solo `fetch` y `node:crypto`. La suite de conformidad se exporta como **datos, no como tests**: una lista de casos que cada repo engancha a su propio runner, para que el paquete no arrastre Vitest.
 
 **Este repo es público desde el 2026-08-02**, y eso es un requisito de la
 dependencia git, no una casualidad: con el repo privado, el `bun install` del
@@ -1017,18 +1028,24 @@ git.
 y a `scripts`:
 
 ```json
-    "build:client": "tsc -p tsconfig.client.json",
-    "prepare": "tsc -p tsconfig.client.json"
+    "build:client": "tsc -p tsconfig.client.json"
 ```
 
-**`prepare` es lo que hace que la dependencia git funcione**: npm y bun lo
-corren al instalar desde git, así que el consumidor recibe `dist/` ya
-compilado y no necesita transpilar TypeScript de `node_modules`.
+**Sin `prepare`, y `dist/` va commiteado.** Ver la nota de §Architecture: bun
+bloquea los scripts de ciclo de vida, así que un `prepare` no correría y el
+consumidor recibiría el paquete sin compilar. `dist/` **no** va a `.gitignore`.
 
-Y sumá `dist` a `.gitignore`:
+Y sumá a `.github/workflows/ci.yml`, después del paso de tests, el guard que
+impide que `dist` se desincronice del fuente:
 
-```bash
-echo "dist" >> .gitignore
+```yaml
+      - name: dist está al día con el fuente
+        run: |
+          bun run build:client
+          git diff --exit-code dist || {
+            echo "::error::dist quedó desincronizado. Corré 'bun run build:client' y commiteá."
+            exit 1
+          }
 ```
 
 - [ ] **Step 5: Verificar que compila y que emite lo declarado**
