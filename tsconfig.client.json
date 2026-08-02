@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    // Sin esto tsc emite igual con errores y se publicaría un paquete roto.
+    "noEmitOnError": true,
+    "declaration": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    // Node para `node:crypto` y `node:buffer`; DOM para `Request` y `fetch`.
+    // Los tipos de bun quedan afuera a propósito: quien instale el paquete no
+    // los tiene, y un `/// <reference types="bun" />` en los .d.ts lo obligaría.
+    "types": ["node"],
+    "lib": ["ESNext", "DOM"]
+  },
+  "include": ["src/client/**/*.ts"],
+  "exclude": ["src/client/**/*.test.ts"]
+}
