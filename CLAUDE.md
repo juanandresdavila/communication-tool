@@ -10,11 +10,23 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 
 ## Estado del proyecto
 
-> **Lo primero que hay que saber: el webhook del bot NO apunta acá.** Ver
-> §El webhook lo tiene GymTracker, más abajo. Las fases 1 y 2 están
-> implementadas y probadas, pero **inertes en producción**: no les llega un
-> solo update. La fase 3 no depende del webhook y sí funciona — se verificó
-> con envíos reales el 2026-08-02.
+> **comm-tool está en el camino crítico de GymTracker desde el 2026-08-02.**
+> El webhook del bot apunta acá y los entrantes se entregan a
+> `/api/messaging/inbound` de GymTracker. Si comm-tool se cae, el bot de
+> gimnasio deja de registrar series. Ver §El corte, más abajo, que incluye el
+> rollback.
+
+Fase 4 — Cliente y migración **completa** (2026-08-02, verificada contra
+producción). Paquete cliente en `src/client/`, distribuido como dependencia git
+anclada a `v0.1.0`; suite de conformidad que **las dos implementaciones pasan**
+—la de Telegram directo de GymTracker y la de comm-tool—; y el corte del
+webhook, hecho y verificado con un mensaje real.
+
+El circuito completo anda: Telegram → webhook de comm-tool → entrega firmada →
+GymTracker parsea la serie → responde por `POST /v1/messages` → Telegram. Se
+verificó **antes** de mover el webhook, mandando un update sintético al
+endpoint de comm-tool mientras Telegram todavía apuntaba a GymTracker: si algo
+fallaba, no se perdía nada.
 
 Fase 3 — Salientes **completa** (2026-08-02, verificada contra producción).
 `POST /v1/messages` resuelve el contacto por `app_user_id`, saca el token del
@@ -29,9 +41,11 @@ fila y **un solo** mensaje en el chat—, una respuesta citada, `404 not_linked`
 y `400 invalid_request` con más de 4096 caracteres. Al terminar quedó todo en
 `sent`, nada en `sending`, y el contacto de prueba desvinculado.
 
-**El contacto se creó con un `INSERT` a mano, no con `/vincular`**, porque el
-webhook lo tiene GymTracker. Es la forma de probar salientes mientras dure esa
-situación: el envío solo necesita el token y un contacto, no el webhook.
+En su momento el contacto se creó con un `INSERT` a mano, porque el webhook
+todavía lo tenía GymTracker. Desde la fase 4 `/vincular` funciona de verdad,
+pero el `INSERT` sigue siendo útil: **el saliente solo necesita el token y un
+contacto, no el webhook**, así que se puede probar aunque el registro esté en
+otro lado.
 
 El `replyToMessageId` viaja en ids **del proveedor**, en las dos direcciones,
 porque el entrante de la fase 2 ya los expone así. La respuesta devuelve los
@@ -59,60 +73,69 @@ webhook de Telegram con verificación timing-safe del secreto, `/vincular` con
 sus ramas de rechazo, y respuesta a chats no vinculados.
 
 El bot `@gymtrackerjaddbot` (id `8867091101`) está dado de alta con slug `gym`.
-Su webhook **apuntó** a `https://communication-tool-beta.vercel.app/webhooks/telegram/gym`
-mientras se verificó esta fase. Ya no.
 
 Fase 0 — Scaffold completa: Hono sobre Bun, runner de migraciones, CI, `/health`.
 
-**Próxima fase:** Fase 4 — Cliente (paquete npm, suite de conformidad de la
-interfaz `Messaging`, **migración de GymTracker**). Generar el plan con
-`superpowers:writing-plans` contra el spec.
+**Próxima fase:** Fase 5 — Scheduler (`schedules`, callbacks, migración del
+check-in nocturno). Generar el plan con `superpowers:writing-plans` contra el
+spec.
 
-## El webhook lo tiene GymTracker
+## El corte, y cómo volver atrás
 
-Medido el 2026-08-02 con `getWebhookInfo`:
-
-| | |
-|---|---|
-| Apunta a | `https://gym-tracker-brown-one.vercel.app/api/telegram` |
-| `pending_update_count` | 0 — el endpoint de GymTracker contesta bien |
-| Último error | 2026-07-30 03:05 UTC, `307 Temporary Redirect` |
+El webhook de `@gymtrackerjaddbot` apunta a comm-tool desde el 2026-08-02:
+`https://communication-tool-beta.vercel.app/webhooks/telegram/gym`.
 
 **Un bot de Telegram tiene un solo webhook y es exclusivo.** El último que
 llama a `setWebhook` se queda con todos los updates; el anterior deja de
 recibir **sin error ni aviso de ningún lado**. Ninguna suite puede detectarlo:
-el registro vive en Telegram, no en el repo. Si el entrante "no llega" y el
+el registro vive en Telegram, no en el repo. Si un entrante "no llega" y el
 servicio está sano, esto es lo primero que hay que mirar:
 
 ```bash
-read -rs "T?Token del bot: " && curl -s "https://api.telegram.org/bot$T/getWebhookInfo" && unset T
+cd ~/Projects/gym-tracker && T="$(grep '^TELEGRAM_BOT_TOKEN=' .env.local | cut -d= -f2- | tr -d '"')" && curl -s "https://api.telegram.org/bot$T/getWebhookInfo" && unset T
 ```
 
-(Sintaxis de zsh. En bash el prompt va con `-p`.)
+### Rollback
 
-**No repuntarlo a comm-tool todavía.** Recuperar el webhook rompe el bot de
-GymTracker en el acto: comm-tool entregaría los entrantes al `delivery_url` de
-`gym-tracker`, que no existe hasta la fase 4. Se perdería el registro de series
-a cambio de nada.
+`/api/telegram` de GymTracker **sigue existiendo y funcionando**: el corte fue
+un cambio de registro, no una migración de código. Volver es una sola llamada,
+sin deploy:
 
-De acá sale la restricción de secuencia que el spec insinúa y conviene tener
-explícita: **el `delivery_url` de GymTracker tiene que existir ANTES de que
-comm-tool tome el webhook.** No es una preferencia de orden, es exclusión
-mutua. La fase 4 es un corte, no una transición gradual.
+```bash
+cd ~/Projects/gym-tracker && T="$(grep '^TELEGRAM_BOT_TOKEN=' .env.local | cut -d= -f2- | tr -d '"')" && S="$(grep '^TELEGRAM_WEBHOOK_SECRET=' .env.local | cut -d= -f2- | tr -d '"')" && curl -s -X POST "https://api.telegram.org/bot$T/setWebhook" -H 'Content-Type: application/json' -d "{\"url\":\"https://gym-tracker-brown-one.vercel.app/api/telegram\",\"secret_token\":\"$S\",\"allowed_updates\":[\"message\"]}" && unset T S
+```
 
-**La dependencia que no se cierra sola:** el `delivery_url` de `gym-tracker`
-apunta a un endpoint que **todavía no existe**. Ese endpoint es parte de la
-**fase 4 de acá** —la migración—, no de la fase 3 de GymTracker, que fue el bot
-inteligente y ya está terminada. Por eso la entrega se verificó contra
-`scripts/receptor-de-prueba.ts`, que además es el ejemplo mínimo de lo que
-GymTracker tiene que implementar. Hoy no hay ningún contacto vinculado en
-producción, así que no hay entregas en curso.
+Que los dos caminos convivan es deliberado y conviene que siga así hasta que
+comm-tool acumule historial en producción.
 
-Los cuatro cambios de compatibilidad que el spec le pide a GymTracker
-(§Cambios requeridos en las apps consumidoras) están hechos de su lado al
-2026-08-02: `parseIncoming` devuelve `userId`, `sendMessage` devuelve
-`{ messageId }` y toma `kind`, la clave única de `message_log` es compuesta, y
-el jitter del cron está absorbido.
+### Cómo probar el circuito sin depender de Telegram
+
+Se le puede postear un update sintético al webhook de comm-tool con el
+`secret_token` correcto. Recorre todo —dedupe, entrega firmada, dominio de
+GymTracker, respuesta por `/v1/messages`— y termina con un mensaje real en el
+chat. Es lo que se usó para verificar **antes** de mover el registro, y sirve
+igual para diagnosticar después:
+
+```bash
+curl -s -X POST https://communication-tool-beta.vercel.app/webhooks/telegram/gym \
+  -H "X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET_GYM>" \
+  -H 'Content-Type: application/json' \
+  -d '{"update_id":999001,"message":{"message_id":1,"chat":{"id":<CHAT_ID>,"type":"private"},"date":1785400000,"text":"press banca 3x8 70"}}'
+```
+
+Ojo con el `update_id`: repetirlo no hace nada, porque el dedupe por
+`(bot_id, provider_update_id)` lo descarta. Para una prueba nueva, número nuevo.
+
+### Los secretos que tienen que coincidir
+
+Ninguno se puede leer de Vercel —están marcados como sensibles—, así que
+verificar que coinciden no es posible: si se sospecha de ellos, se rotan los
+dos lados a la vez.
+
+| Secreto | Tiene que coincidir con |
+|---|---|
+| `TELEGRAM_WEBHOOK_SECRET_GYM` | El `secret_token` registrado en `setWebhook` |
+| `DELIVERY_SECRET_GYM` | `COMM_TOOL_DELIVERY_SECRET` de gym-tracker |
 
 ## Setup en una máquina nueva
 
@@ -175,7 +198,7 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
 
 - **Si un entrante "no llega", mirá el webhook antes que el código.** Es
   exclusivo por bot y se lo puede haber llevado otro servicio sin dejar rastro.
-  Ver §El webhook lo tiene GymTracker.
+  Ver §El corte, y cómo volver atrás.
 - **Las variables de entorno en Vercel solo aplican a deploys nuevos.** Cargar
   una y no redeployar deja el servicio con la vieja: el webhook devolvió 500
   hasta hacer `vercel redeploy`. Vale cada vez que se sume un bot.
@@ -183,11 +206,15 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   inactividad y cobra por hora de cómputo: consultar cada pocos segundos para
   esperar un evento la mantiene despierta y se come el presupuesto. Es la misma
   razón por la que el ticker corre cada 15 minutos y no cada 5.
-- **Para probar salientes hace falta un contacto, y `/vincular` no sirve**
-  mientras el webhook sea de GymTracker. Se inserta a mano en `contacts`
-  (`app_id`, `channel='telegram'`, `external_id`=el chat id, `app_user_id`) y
-  se borra después con `DELETE /v1/contacts/:userId`. El chat id propio lo dice
-  `@userinfobot` con un `/start`.
+- **El `app_user_id` de un contacto es el uuid real de `auth.users` de la app**,
+  no una etiqueta cualquiera. `message_log.user_id` de GymTracker lo referencia
+  por clave foránea: uno inventado hace fallar la entrega con un 500 que parece
+  un problema de firma. Hoy el contacto vivo es
+  `fe35defa-f188-4e2e-978e-36f5d748abbc`.
+- **Para probar salientes sin pasar por `/vincular`** se inserta el contacto a
+  mano en `contacts` (`app_id`, `channel='telegram'`, `external_id`=el chat id,
+  `app_user_id`) y se borra con `DELETE /v1/contacts/:userId`. El chat id propio
+  lo dice `@userinfobot` con un `/start`.
 - **Un saliente trabado en `sending`** es una invocación que murió entre la
   reserva y la marca. Un reintento con la misma clave devuelve `409
   in_progress` a propósito: no se puede saber si el mensaje salió.
