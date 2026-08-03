@@ -208,7 +208,13 @@ credencial de la app consumidora, y acá solo vive su hash en
 y rotarla:
 
 ```bash
-KEY="$(openssl rand -hex 24)" && echo "GYM_API_KEY=$KEY" >> .env && bun run scripts/registrar-app.ts "$KEY"
+KEY="$(openssl rand -hex 24)" && echo "GYM_API_KEY=$KEY" >> .env && bun run scripts/registrar-app.ts \
+  --slug gym-tracker --name GymTracker --api-key "$KEY" \
+  --delivery-url https://gym-tracker-brown-one.vercel.app/api/messaging/inbound \
+  --schedule-url https://gym-tracker-brown-one.vercel.app/api/messaging/schedule \
+  --delivery-secret-env DELIVERY_SECRET_GYM \
+  --bot-slug gym --bot-username gymtrackerjaddbot \
+  --token-env TELEGRAM_TOKEN_GYM --webhook-secret-env TELEGRAM_WEBHOOK_SECRET_GYM
 ```
 
 Hoy rotar es inofensivo porque ningún consumidor la usa. Después de la fase 4
@@ -271,11 +277,19 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   SELECT app_user_id, status, provider_message_id, idempotency_key, error
   FROM outbound_messages ORDER BY created_at DESC LIMIT 20;
   ```
-- **Dar de alta una app y un bot**: `bun run scripts/registrar-app.ts <api-key>`
-  y después registrar el webhook con `setWebhook`, pasando el `secret_token`
-  idéntico al valor de la variable que referencia `bots.webhook_secret_env`.
-  Si difieren en un carácter, Telegram postea y el servicio rechaza con 401
-  sin ninguna pista de por qué.
+- **Dar de alta una app y un bot**: `bun run scripts/registrar-app.ts` con
+  `--slug`, `--name`, `--api-key`, `--delivery-url`, `--delivery-secret-env`,
+  `--bot-slug`, `--token-env` y `--webhook-secret-env` (más `--schedule-url` y
+  `--bot-username`, opcionales). Es **idempotente**: se usa igual para rotar la
+  API key de una app existente sin pisarle el resto de la configuración.
+
+  Después hay que registrar el webhook con `setWebhook`, pasando el
+  `secret_token` idéntico al valor de la variable que referencia
+  `bots.webhook_secret_env`. Si difieren en un carácter, Telegram postea y el
+  servicio rechaza con 401 sin ninguna pista de por qué.
+
+  **Ojo con `setWebhook` sobre un bot que ya está en uso**: es exclusivo y le
+  saca los updates a quien los tenía. Sobre un bot recién creado es inofensivo.
 - **`INTERNAL_SECRET` tiene que estar en Production *y* en Preview.** `parseEnv`
   la exige, y corre al importar el módulo: si falta en Preview, el build pasa
   igual y el deploy revienta con 500 en el primer request. Hoy las dos
