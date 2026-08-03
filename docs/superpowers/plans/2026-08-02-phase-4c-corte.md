@@ -10,6 +10,13 @@
 
 ---
 
+> **Nota posterior a la ejecución.** Los pasos de abajo nombran scripts
+> (`scripts/probar-entrega.ts`, `scripts/mover-webhook.ts`, …) que en su
+> momento se corrieron como scripts sueltos y no quedaron en el repo. De ese
+> conjunto sobrevivieron los dos que sirven más de una vez:
+> **`scripts/ver-webhook.ts`** y **`scripts/ver-circuito.ts`**. El resto eran
+> de una sola vez; los comandos equivalentes están en CLAUDE.md, §El corte.
+
 ## El rollback, escrito antes de tocar nada
 
 Estado capturado el 2026-08-02 antes de empezar:

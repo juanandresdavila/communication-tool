@@ -222,7 +222,22 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
 
 - **Si un entrante "no llega", mirá el webhook antes que el código.** Es
   exclusivo por bot y se lo puede haber llevado otro servicio sin dejar rastro.
-  Ver §El corte, y cómo volver atrás.
+
+  ```bash
+  bun run scripts/ver-webhook.ts
+  ```
+
+  Lee el token del `.env.local` de gym-tracker, porque en el `.env` de acá baja
+  como `[SENSITIVE]`. Ver §El corte, y cómo volver atrás.
+- **El estado de las tres colas, de un vistazo:**
+
+  ```bash
+  bun run scripts/ver-circuito.ts
+  ```
+
+  Entrantes, salientes y programados, más un aviso si algún programado
+  pertenece a una app sin `schedule_callback_url` — que no dispara y se marca
+  `failed` sin postear nada.
 - **Las variables de entorno en Vercel solo aplican a deploys nuevos.** Cargar
   una y no redeployar deja el servicio con la vieja: el webhook devolvió 500
   hasta hacer `vercel redeploy`. Vale cada vez que se sume un bot.
