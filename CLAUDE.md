@@ -16,6 +16,31 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 > gimnasio deja de registrar series. Ver §El corte, más abajo, que incluye el
 > rollback.
 
+Fase 5 — Scheduler **completa** (2026-08-03, verificada contra producción).
+`schedules` con único `(app_id, app_user_id, name)`, `POST /v1/schedules` y
+`DELETE /v1/schedules/:name`, y el disparo de callbacks firmados desde el mismo
+`/internal/tick` que ya movía los reintentos. El cálculo de la próxima
+ejecución usa `croner`. 225 tests, migración `0004` aplicada.
+
+**comm-tool no compone el mensaje del programado**: postea `{ scheduleId,
+name, userId, firedAt }` al `schedule_callback_url` de la app y ella decide qué
+decir. Hay un test que verifica que el cuerpo no contenga texto.
+
+Dos detalles que se pagan caro si se invierten:
+
+- **Al fallar un callback, `next_run_at` vuelve al horario original**, no se
+  queda en el lease del claim. Si quedara en el lease, cada reintento
+  recalcularía la ventana de gracia contra él y el programado se reintentaría
+  para siempre. La ventana es de **una hora**: con el ticker cada 15 minutos da
+  ~4 reintentos y después marca `missed`.
+- **El `deliveryId` del callback es `<scheduleId>:<horarioAgendado>`.** Con un
+  uuid nuevo por intento, un reintento mandaría el aviso dos veces.
+
+El check-in nocturno de GymTracker se construyó **directo sobre el scheduler**,
+sin pasar por Vercel Cron. Su spec preveía hacerlo ahí y migrarlo después,
+aceptando un jitter de una hora; como comm-tool llegó primero, se saltó ese
+paso y el aviso sale a las 22:00 exactas de Buenos Aires.
+
 Fase 4 — Cliente y migración **completa** (2026-08-02, verificada contra
 producción). Paquete cliente en `src/client/`, distribuido como dependencia git
 anclada a `v0.1.0`; suite de conformidad que **las dos implementaciones pasan**
@@ -76,9 +101,8 @@ El bot `@gymtrackerjaddbot` (id `8867091101`) está dado de alta con slug `gym`.
 
 Fase 0 — Scaffold completa: Hono sobre Bun, runner de migraciones, CI, `/health`.
 
-**Próxima fase:** Fase 5 — Scheduler (`schedules`, callbacks, migración del
-check-in nocturno). Generar el plan con `superpowers:writing-plans` contra el
-spec.
+**Próxima fase:** Fase 6 — Study Master (segundo bot, recordatorios de
+entregas). Generar el plan con `superpowers:writing-plans` contra el spec.
 
 ## El corte, y cómo volver atrás
 
@@ -198,7 +222,22 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
 
 - **Si un entrante "no llega", mirá el webhook antes que el código.** Es
   exclusivo por bot y se lo puede haber llevado otro servicio sin dejar rastro.
-  Ver §El corte, y cómo volver atrás.
+
+  ```bash
+  bun run scripts/ver-webhook.ts
+  ```
+
+  Lee el token del `.env.local` de gym-tracker, porque en el `.env` de acá baja
+  como `[SENSITIVE]`. Ver §El corte, y cómo volver atrás.
+- **El estado de las tres colas, de un vistazo:**
+
+  ```bash
+  bun run scripts/ver-circuito.ts
+  ```
+
+  Entrantes, salientes y programados, más un aviso si algún programado
+  pertenece a una app sin `schedule_callback_url` — que no dispara y se marca
+  `failed` sin postear nada.
 - **Las variables de entorno en Vercel solo aplican a deploys nuevos.** Cargar
   una y no redeployar deja el servicio con la vieja: el webhook devolvió 500
   hasta hacer `vercel redeploy`. Vale cada vez que se sume un bot.
@@ -215,6 +254,15 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   mano en `contacts` (`app_id`, `channel='telegram'`, `external_id`=el chat id,
   `app_user_id`) y se borra con `DELETE /v1/contacts/:userId`. El chat id propio
   lo dice `@userinfobot` con un `/start`.
+- **Un programado que no dispara**: lo primero es mirar si la app tiene
+  `schedule_callback_url`. En `NULL` el disparo se marca `failed` sin postear
+  nada, que es indistinguible de un callback caído si no se mira la columna.
+
+  ```sql
+  SELECT s.name, s.cron, s.timezone, s.next_run_at, s.last_status,
+         a.schedule_callback_url
+  FROM schedules s JOIN apps a ON a.id = s.app_id ORDER BY s.next_run_at;
+  ```
 - **Un saliente trabado en `sending`** es una invocación que murió entre la
   reserva y la marca. Un reintento con la misma clave devuelve `409
   in_progress` a propósito: no se puede saber si el mensaje salió.

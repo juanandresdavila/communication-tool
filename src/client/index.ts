@@ -52,6 +52,9 @@ export function createCommToolMessaging(config: CommToolConfig): Messaging {
             ? { replyToMessageId: msg.replyToMessageId }
             : {}),
           ...(msg.template ? { template: msg.template } : {}),
+          ...(msg.idempotencyKey
+            ? { idempotencyKey: msg.idempotencyKey }
+            : {}),
         }),
       })
 

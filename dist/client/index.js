@@ -22,6 +22,9 @@ export function createCommToolMessaging(config) {
                         ? { replyToMessageId: msg.replyToMessageId }
                         : {}),
                     ...(msg.template ? { template: msg.template } : {}),
+                    ...(msg.idempotencyKey
+                        ? { idempotencyKey: msg.idempotencyKey }
+                        : {}),
                 }),
             });
             const cuerpo = (await res

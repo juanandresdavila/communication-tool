@@ -31,6 +31,8 @@ curl 'localhost:3000/health?deep=1'   # además verifica la base
 | Método | Ruta | Auth |
 |---|---|---|
 | `POST` | `/v1/messages` | Bearer con la API key de la app |
+| `POST` | `/v1/schedules` | Bearer con la API key de la app |
+| `DELETE` | `/v1/schedules/:name?userId=…` | Bearer con la API key de la app |
 | `POST` | `/v1/link-codes` | Bearer con la API key de la app |
 | `GET` / `DELETE` | `/v1/contacts/:userId` | Bearer con la API key de la app |
 | `POST` | `/webhooks/telegram/:botSlug` | `X-Telegram-Bot-Api-Secret-Token` |
@@ -51,6 +53,27 @@ devuelve `{ messageId, providerMessageId, status }`.
 
 Repetir la llamada con la misma `idempotencyKey` devuelve la misma respuesta
 sin mandar un segundo mensaje. Sin clave no hay deduplicación.
+
+`POST /v1/schedules` acepta `{ userId, name, cron, timezone }` y devuelve
+`{ scheduleId, name, nextRunAt }`. Es alta o actualización por
+`(app, userId, name)`. Un cron o una zona inválidos dan `400 invalid_cron` o
+`400 invalid_timezone` **antes** de guardar: un programado que nunca dispara no
+se descubre hasta que falta el aviso.
+
+Al vencer, comm-tool **no compone el mensaje**. Postea al
+`schedule_callback_url` de la app, firmado con el mismo HMAC de la entrega:
+
+```
+POST <apps.schedule_callback_url>
+X-Comm-Signature:   t=<unix>,v1=<hmac-sha256(t + "." + body)>
+X-Comm-Delivery-Id: <scheduleId>:<horarioAgendado>
+
+{ scheduleId, name, userId, firedAt }
+```
+
+La app arma el texto y llama a `/v1/messages`. El `X-Comm-Delivery-Id` es
+estable entre reintentos del mismo disparo, así que deduplicando por él el
+aviso no sale dos veces.
 
 ## Scripts
 
