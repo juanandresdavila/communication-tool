@@ -8,6 +8,7 @@ import type {
   InboundMessagesRepo,
   LinkCodesRepo,
   OutboundMessagesRepo,
+  SchedulesRepo,
 } from './db/ports.js'
 import type { DeliveryClient } from './delivery/client.js'
 import { apiKeyAuth, type ConVariablesDeApp } from './middleware/api-key-auth.js'
@@ -17,6 +18,7 @@ import { healthRoutes } from './routes/health.js'
 import { internalRoutes } from './routes/internal.js'
 import { linkCodeRoutes } from './routes/link-codes.js'
 import { messageRoutes } from './routes/messages.js'
+import { scheduleRoutes } from './routes/schedules.js'
 import { telegramWebhookRoutes } from './routes/telegram-webhook.js'
 import type { SecretReader } from './secrets.js'
 
@@ -32,6 +34,7 @@ export interface Deps {
   randomBytes: (n: number) => Uint8Array
   inbound: InboundMessagesRepo
   outbound: OutboundMessagesRepo
+  schedules: SchedulesRepo
   delivery: DeliveryClient
   internalSecret: string
   waitUntil: (promesa: Promise<unknown>) => void
@@ -65,6 +68,7 @@ export function createApp(deps: Deps): Hono {
   v1.route('/', linkCodeRoutes(deps))
   v1.route('/', contactRoutes(deps))
   v1.route('/', messageRoutes(deps))
+  v1.route('/', scheduleRoutes(deps))
   app.route('/', v1)
 
   return app

@@ -8,6 +8,7 @@ import {
   createFakeLinkCodesRepo,
   createFakeOutboundMessagesRepo,
 } from './fake-repos.js'
+import { createFakeSchedulesRepo } from './fake-schedules.js'
 
 export function createFakeDeps(over: Partial<Deps> = {}): Deps {
   return {
@@ -26,6 +27,7 @@ export function createFakeDeps(over: Partial<Deps> = {}): Deps {
     randomBytes: (n) => new Uint8Array(Array.from({ length: n }, (_, i) => i)),
     inbound: createFakeInboundMessagesRepo([]),
     outbound: createFakeOutboundMessagesRepo([]),
+    schedules: createFakeSchedulesRepo([]),
     delivery: {
       async entregar() {
         return { ok: true, status: 200 }

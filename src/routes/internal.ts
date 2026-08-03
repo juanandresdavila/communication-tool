@@ -1,11 +1,13 @@
 import { Hono } from 'hono'
 import type { DeliverDeps } from '../delivery/deliver.js'
 import { intentarEntrega } from '../delivery/deliver.js'
+import type { FireDeps } from '../schedules/fire.js'
+import { dispararProgramado } from '../schedules/fire.js'
 
 /** Tope por tick: acota la duración de la invocación. */
 const LOTE = 25
 
-export function internalRoutes(deps: DeliverDeps): Hono {
+export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
   const rutas = new Hono()
 
   rutas.post('/internal/tick', async (c) => {
@@ -19,7 +21,23 @@ export function internalRoutes(deps: DeliverDeps): Hono {
       if (resultado === 'failed') fallidos += 1
     }
 
-    return c.json({ procesados: pendientes.length, entregados, fallidos })
+    // El mismo ticker que despierta los reintentos dispara los programados:
+    // en serverless no hay proceso vivo entre requests, y montar un segundo
+    // disparador externo sería duplicar la única pieza de infraestructura.
+    const programados = await deps.schedules.claimVencidos(deps.now(), LOTE)
+    let disparados = 0
+    for (const { schedule, agendadoPara } of programados) {
+      const r = await dispararProgramado(deps, schedule, agendadoPara)
+      if (r === 'fired') disparados += 1
+    }
+
+    return c.json({
+      procesados: pendientes.length,
+      entregados,
+      fallidos,
+      programados: programados.length,
+      disparados,
+    })
   })
 
   rutas.post('/internal/replay/:messageId', async (c) => {

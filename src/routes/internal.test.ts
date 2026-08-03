@@ -7,6 +7,10 @@ import {
   unApp,
   unMensaje,
 } from '../test-support/fake-repos.js'
+import {
+  createFakeSchedulesRepo,
+  unSchedule,
+} from '../test-support/fake-schedules.js'
 import { internalRoutes } from './internal.js'
 
 const AHORA = new Date('2026-07-29T12:00:00.000Z')
@@ -15,17 +19,30 @@ function armar(
   opts: {
     mensajes?: ReturnType<typeof unMensaje>[]
     respuesta?: EntregaResultado
+    programados?: ReturnType<typeof unSchedule>[]
   } = {},
 ) {
   const entregados: string[] = []
   const inbound = createFakeInboundMessagesRepo(opts.mensajes ?? [])
+  const schedules = createFakeSchedulesRepo(opts.programados ?? [])
 
   const server = new Hono()
   server.route(
     '/',
     internalRoutes({
       inbound,
-      apps: createFakeAppsRepo([{ hash: 'h', app: unApp() }]),
+      schedules,
+      apps: createFakeAppsRepo([
+        {
+          hash: 'h',
+          // Con `scheduleCallbackUrl: null` —el default, y lo que hay hoy en
+          // producción— ningún programado dispara. Los tests de programados
+          // necesitan una app que sí lo tenga configurado.
+          app: unApp({
+            scheduleCallbackUrl: 'https://gym.example/api/messaging/schedule',
+          }),
+        },
+      ]),
       delivery: {
         async entregar(p) {
           entregados.push(p.deliveryId)
@@ -55,9 +72,38 @@ describe('POST /internal/tick', () => {
       procesados: 1,
       entregados: 1,
       fallidos: 0,
+      programados: 0,
+      disparados: 0,
     })
     expect(entregados).toEqual(['m1'])
     expect((await inbound.findById('m1'))?.deliveryStatus).toBe('delivered')
+  })
+
+  it('dispara los programados vencidos en el mismo tick', async () => {
+    // El ticker es uno solo: montar un segundo disparador externo para los
+    // programados duplicaría la única pieza de infraestructura que hay.
+    const { server, entregados } = armar({
+      programados: [
+        unSchedule({ id: 's1', nextRunAt: '2026-07-29T11:59:00.000Z' }),
+      ],
+    })
+    const res = await server.request('/internal/tick', { method: 'POST' })
+
+    expect(await res.json()).toMatchObject({ programados: 1, disparados: 1 })
+    // El callback sale por el mismo cliente de entrega, con un id estable.
+    expect(entregados).toEqual(['s1:2026-07-29T11:59:00.000Z'])
+  })
+
+  it('no dispara un programado que todavía no venció', async () => {
+    const { server, entregados } = armar({
+      programados: [
+        unSchedule({ id: 's1', nextRunAt: '2026-07-29T23:00:00.000Z' }),
+      ],
+    })
+    const res = await server.request('/internal/tick', { method: 'POST' })
+
+    expect(await res.json()).toMatchObject({ programados: 0, disparados: 0 })
+    expect(entregados).toEqual([])
   })
 
   it('no toca los que todavía no vencieron', async () => {
