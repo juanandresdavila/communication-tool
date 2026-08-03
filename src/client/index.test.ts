@@ -119,6 +119,50 @@ describe('sendMessage', () => {
     })
   })
 
+  it('manda la clave de idempotencia cuando viene', async () => {
+    // Es lo que hace que un callback de programado reintentado no mande el
+    // aviso dos veces: comm-tool deduplica por (app_id, idempotency_key).
+    const { fake, llamadas } = fetchQue(200, {
+      messageId: 'u',
+      providerMessageId: '1',
+      status: 'sent',
+    })
+
+    await crear(fake).sendMessage({
+      userId: 'user-1',
+      text: 'check-in',
+      kind: 'notification',
+      idempotencyKey: 'sch-1:2026-08-03T01:00:00.000Z',
+    })
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      userId: 'user-1',
+      text: 'check-in',
+      kind: 'notification',
+      idempotencyKey: 'sch-1:2026-08-03T01:00:00.000Z',
+    })
+  })
+
+  it('no manda el campo si no hay clave', async () => {
+    const { fake, llamadas } = fetchQue(200, {
+      messageId: 'u',
+      providerMessageId: '1',
+      status: 'sent',
+    })
+
+    await crear(fake).sendMessage({
+      userId: 'user-1',
+      text: 'x',
+      kind: 'reply',
+    })
+
+    const cuerpo = JSON.parse(String(llamadas[0]?.init?.body)) as Record<
+      string,
+      unknown
+    >
+    expect('idempotencyKey' in cuerpo).toBe(false)
+  })
+
   it('tira si el usuario no está vinculado', async () => {
     // Mismo comportamiento que el adapter de Telegram directo, que tira
     // "no tiene chat de Telegram vinculado". La suite de conformidad lo exige.

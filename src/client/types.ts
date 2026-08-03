@@ -39,6 +39,18 @@ export interface OutgoingMessage {
   kind: 'reply' | 'notification'
   replyToMessageId?: string
   template?: { name: string; vars: Record<string, string> }
+  /**
+   * Clave de idempotencia, **best-effort**: el transporte puede ignorarla.
+   *
+   * Con comm-tool, dos envíos con la misma clave producen un solo mensaje y la
+   * misma respuesta. Con Telegram directo no hay dónde deduplicar y se ignora,
+   * así que quien la use tiene que tolerar que no haga nada — por eso no está
+   * en la suite de conformidad como garantía de deduplicación.
+   *
+   * El caso que la justifica: un callback de programado que se reintenta
+   * porque su respuesta se perdió, y sin clave mandaría el aviso dos veces.
+   */
+  idempotencyKey?: string
 }
 
 export interface Messaging {

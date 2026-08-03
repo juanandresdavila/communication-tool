@@ -144,6 +144,26 @@ export const CASOS_DE_CONFORMIDAD: CasoDeConformidad[] = [
     },
   },
   {
+    nombre: 'sendMessage tolera una idempotencyKey sin cambiar de conducta',
+    async ejecutar(ctx) {
+      // NO se exige deduplicación: Telegram directo no tiene dónde hacerla y
+      // la clave es best-effort por contrato. Lo que sí tienen que compartir
+      // las dos implementaciones es no romperse ni devolver algo distinto por
+      // recibir el campo — si una lo rechazara, migrar cambiaría el
+      // comportamiento del scheduler sin que nadie lo note.
+      const res = await ctx.messaging.sendMessage({
+        userId: ctx.userIdVinculado,
+        text: 'mensaje de conformidad con clave',
+        kind: 'notification',
+        idempotencyKey: 'conformidad-1',
+      })
+      afirmar(
+        typeof res.messageId === 'string' && res.messageId.length > 0,
+        `con idempotencyKey devolvió un messageId inservible: ${JSON.stringify(res.messageId)}`,
+      )
+    },
+  },
+  {
     nombre: 'sendMessage tira si el usuario no está vinculado',
     async ejecutar(ctx) {
       // Las dos implementaciones tienen que FALLAR, no devolver un id falso.
