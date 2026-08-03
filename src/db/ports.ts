@@ -202,6 +202,61 @@ export interface OutboundMessagesRepo {
   marcarFallido(id: string, error: string): Promise<void>
 }
 
+export type ScheduleStatus = 'fired' | 'failed' | 'missed'
+
+export interface Schedule {
+  id: string
+  appId: string
+  appUserId: string
+  name: string
+  cron: string
+  timezone: string
+  active: boolean
+  nextRunAt: string | null
+  lastRunAt: string | null
+  lastStatus: ScheduleStatus | null
+}
+
+export interface SchedulesRepo {
+  /** Alta o actualización por `(app_id, app_user_id, name)`. */
+  upsert(input: {
+    appId: string
+    appUserId: string
+    name: string
+    cron: string
+    timezone: string
+    nextRunAt: Date
+  }): Promise<Schedule>
+
+  /** Devuelve false si no había nada que dar de baja. */
+  deleteByName(appId: string, appUserId: string, name: string): Promise<boolean>
+
+  /**
+   * Toma hasta `limite` programados activos vencidos y les pone un lease, para
+   * que dos ticks simultáneos no disparen el mismo aviso dos veces.
+   *
+   * Devuelve cada uno junto al horario para el que **estaba** agendado: el
+   * claim le pisa `next_run_at` con el lease, y sin el original la ventana de
+   * gracia nunca se cumpliría y el programado se reintentaría para siempre.
+   */
+  claimVencidos(
+    ahora: Date,
+    limite: number,
+  ): Promise<{ schedule: Schedule; agendadoPara: string }[]>
+
+  marcarDisparado(id: string, ahora: Date, proxima: Date): Promise<void>
+  /**
+   * Devuelve `next_run_at` al horario original para que el tick siguiente
+   * reintente. **No alcanza con dejarlo quieto**: el claim lo pisó con el
+   * lease, y si se dejara así cada reintento recalcularía la ventana de gracia
+   * contra el lease en vez del horario agendado, y el programado se
+   * reintentaría para siempre.
+   */
+  marcarFallido(id: string, ahora: Date, agendadoPara: Date): Promise<void>
+  /** Se pasó la ventana de gracia: salta a la próxima ocurrencia. */
+  marcarPerdido(id: string, ahora: Date, proxima: Date): Promise<void>
+}
+
 export interface LinkCodesRepo {
   create(input: {
     code: string
