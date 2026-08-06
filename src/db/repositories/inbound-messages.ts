@@ -1,4 +1,4 @@
-import type { Sql } from '../client.js'
+import type { Json, Sql } from '../client.js'
 import type {
   Channel,
   DeliveryStatus,
@@ -63,7 +63,7 @@ export function createInboundMessagesRepo(sql: Sql): InboundMessagesRepo {
           ${input.botId}, ${input.appId}, ${input.channel},
           ${input.providerUpdateId}, ${input.externalId}, ${input.appUserId},
           ${input.text}, ${input.replyToMessageId},
-          ${JSON.stringify(input.raw)}::jsonb, ${input.deliveryStatus},
+          ${sql.json(input.raw as Json)}, ${input.deliveryStatus},
           ${input.nextAttemptAt?.toISOString() ?? null}
         )
         ON CONFLICT (bot_id, provider_update_id) DO NOTHING

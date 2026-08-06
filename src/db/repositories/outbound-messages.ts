@@ -1,4 +1,4 @@
-import type { Sql } from '../client.js'
+import type { Json, Sql } from '../client.js'
 import type {
   Channel,
   OutboundKind,
@@ -62,7 +62,7 @@ export function createOutboundMessagesRepo(sql: Sql): OutboundMessagesRepo {
         ) VALUES (
           ${input.appId}, ${input.contactId}, ${input.appUserId},
           ${input.channel}, ${input.kind}, ${input.text},
-          ${input.template === null ? null : JSON.stringify(input.template)}::jsonb,
+          ${input.template === null ? null : sql.json(input.template as unknown as Json)},
           ${input.replyToMessageId}, ${input.idempotencyKey}, 'sending'
         )
         ON CONFLICT (app_id, idempotency_key) DO UPDATE
