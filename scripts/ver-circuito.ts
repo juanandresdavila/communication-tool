@@ -8,29 +8,30 @@
  *
  *     bun run scripts/ver-circuito.ts
  */
-import { Client } from '@neondatabase/serverless'
+import postgres from 'postgres'
 
-const c = new Client(process.env.DATABASE_URL)
-await c.connect()
+const url = process.env.DATABASE_URL
+if (!url) throw new Error('Falta DATABASE_URL')
+const c = postgres(url, { max: 1 })
 
-const entrantes = await c.query(
+const entrantes = await c.unsafe(
   `SELECT provider_update_id AS update_id, left(text, 28) AS texto,
           delivery_status AS estado, delivery_attempts AS intentos,
           left(coalesce(last_error, ''), 28) AS error
    FROM inbound_messages ORDER BY received_at DESC LIMIT 8`,
 )
 console.log('ENTRANTES (los últimos 8):')
-console.table(entrantes.rows)
+console.table([...entrantes])
 
-const salientes = await c.query(
+const salientes = await c.unsafe(
   `SELECT left(text, 32) AS texto, kind, status AS estado,
           provider_message_id AS tg, left(coalesce(error, ''), 28) AS error
    FROM outbound_messages ORDER BY created_at DESC LIMIT 8`,
 )
 console.log('SALIENTES (los últimos 8):')
-console.table(salientes.rows)
+console.table([...salientes])
 
-const programados = await c.query(
+const programados = await c.unsafe<{ callback: string }[]>(
   `SELECT s.name AS nombre, s.cron, s.timezone AS zona, s.next_run_at AS proximo,
           s.last_status AS ultimo,
           CASE WHEN a.schedule_callback_url IS NULL THEN 'SIN CALLBACK' ELSE 'ok' END
@@ -39,13 +40,11 @@ const programados = await c.query(
    ORDER BY s.next_run_at`,
 )
 console.log('PROGRAMADOS:')
-console.table(programados.rows)
+console.table([...programados])
 
 // Un programado sin callback se marca `failed` sin postear nada, que es
 // indistinguible de una app caída si no se mira esta columna.
-const sinCallback = programados.rows.filter(
-  (f) => (f as { callback: string }).callback === 'SIN CALLBACK',
-)
+const sinCallback = programados.filter((f) => f.callback === 'SIN CALLBACK')
 if (sinCallback.length > 0) {
   console.log(
     `\nOJO: ${sinCallback.length} programado(s) de una app sin schedule_callback_url. No van a disparar.`,

@@ -1,4 +1,4 @@
-import { Client } from '@neondatabase/serverless'
+import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createSql } from '../client.js'
 import type { OutboundMessagesRepo } from '../ports.js'
@@ -16,9 +16,8 @@ correr('outbound_messages contra una base real', () => {
   let contactId = ''
 
   async function limpiar() {
-    const c = new Client(DATABASE_URL)
-    await c.connect()
-    await c.query('DELETE FROM apps WHERE slug = $1', [SLUG_APP])
+    const c = postgres(DATABASE_URL, { max: 1 })
+    await c.unsafe('DELETE FROM apps WHERE slug = $1', [SLUG_APP])
     await c.end()
   }
 
@@ -26,23 +25,22 @@ correr('outbound_messages contra una base real', () => {
     repo = createOutboundMessagesRepo(createSql(DATABASE_URL))
     await limpiar()
 
-    const c = new Client(DATABASE_URL)
-    await c.connect()
-    const app = await c.query<{ id: string }>(
+    const c = postgres(DATABASE_URL, { max: 1 })
+    const app = await c.unsafe<{ id: string }[]>(
       `INSERT INTO apps (slug, name, api_key_hash, delivery_url, delivery_secret_env)
        VALUES ($1, 'Test', 'h', 'https://ejemplo.test/inbound', 'S') RETURNING id`,
       [SLUG_APP],
     )
-    const filaApp = app.rows[0]
+    const filaApp = app[0]
     if (!filaApp) throw new Error('no se creó la app de prueba')
     appId = filaApp.id
 
-    const contacto = await c.query<{ id: string }>(
+    const contacto = await c.unsafe<{ id: string }[]>(
       `INSERT INTO contacts (app_id, channel, external_id, app_user_id)
        VALUES ($1, 'telegram', '12345', 'u-1') RETURNING id`,
       [appId],
     )
-    const filaContacto = contacto.rows[0]
+    const filaContacto = contacto[0]
     if (!filaContacto) throw new Error('no se creó el contacto de prueba')
     contactId = filaContacto.id
     await c.end()

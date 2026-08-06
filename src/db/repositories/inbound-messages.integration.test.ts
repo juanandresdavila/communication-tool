@@ -1,4 +1,4 @@
-import { Client } from '@neondatabase/serverless'
+import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createSql } from '../client.js'
 import type { InboundMessagesRepo } from '../ports.js'
@@ -17,9 +17,8 @@ correr('inbound_messages contra una base real', () => {
   let botId = ''
 
   async function limpiar() {
-    const c = new Client(DATABASE_URL)
-    await c.connect()
-    await c.query('DELETE FROM apps WHERE slug = $1', [SLUG_APP])
+    const c = postgres(DATABASE_URL, { max: 1 })
+    await c.unsafe('DELETE FROM apps WHERE slug = $1', [SLUG_APP])
     await c.end()
   }
 
@@ -27,24 +26,23 @@ correr('inbound_messages contra una base real', () => {
     repo = createInboundMessagesRepo(createSql(DATABASE_URL))
     await limpiar()
 
-    const c = new Client(DATABASE_URL)
-    await c.connect()
-    const app = await c.query<{ id: string }>(
+    const c = postgres(DATABASE_URL, { max: 1 })
+    const app = await c.unsafe<{ id: string }[]>(
       `INSERT INTO apps (slug, name, api_key_hash, delivery_url, delivery_secret_env)
        VALUES ($1, 'Test', 'h', 'https://ejemplo.test/inbound', 'S') RETURNING id`,
       [SLUG_APP],
     )
-    const filaApp = app.rows[0]
+    const filaApp = app[0]
     if (!filaApp) throw new Error('no se creó la app de prueba')
     appId = filaApp.id
 
-    const bot = await c.query<{ id: string }>(
+    const bot = await c.unsafe<{ id: string }[]>(
       `INSERT INTO bots (app_id, channel, slug, token_env, webhook_secret_env,
                          unlinked_message)
        VALUES ($1, 'telegram', $2, 'T', 'S', 'x') RETURNING id`,
       [appId, SLUG_BOT],
     )
-    const filaBot = bot.rows[0]
+    const filaBot = bot[0]
     if (!filaBot) throw new Error('no se creó el bot de prueba')
     botId = filaBot.id
     await c.end()
