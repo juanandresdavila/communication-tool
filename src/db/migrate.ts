@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Client } from '@neondatabase/serverless'
+import postgres from 'postgres'
 import { parseDatabaseEnv } from '../env.js'
 import { pendingMigrations } from './migrations.js'
 
@@ -12,25 +12,25 @@ const DIR_POR_DEFECTO = join(AQUI, '..', '..', 'migrations')
 
 export async function migrate(dir: string = DIR_POR_DEFECTO): Promise<string[]> {
   const env = parseDatabaseEnv(process.env)
-  const client = new Client(env.DATABASE_URL)
-  await client.connect()
+  // max: 1 — el runner es secuencial; un pool solo suma estados que limpiar.
+  const sql = postgres(env.DATABASE_URL, { max: 1, onnotice: () => {} })
 
   try {
-    await client.query(`
+    await sql`
       CREATE TABLE IF NOT EXISTS schema_migrations (
         name       text        PRIMARY KEY,
         applied_at timestamptz NOT NULL DEFAULT now()
       )
-    `)
+    `
 
     const archivos = (await readdir(dir).catch(() => [])).filter((f) =>
       f.endsWith('.sql'),
     )
 
-    const { rows } = await client.query<{ name: string }>(
-      'SELECT name FROM schema_migrations ORDER BY name',
-    )
-    const aplicadas = rows.map((r) => r.name)
+    const filas = await sql<{ name: string }[]>`
+      SELECT name FROM schema_migrations ORDER BY name
+    `
+    const aplicadas = filas.map((r) => r.name)
 
     const pendientes = pendingMigrations(archivos, aplicadas)
 
@@ -40,17 +40,17 @@ export async function migrate(dir: string = DIR_POR_DEFECTO): Promise<string[]> 
     }
 
     for (const nombre of pendientes) {
-      const sql = await readFile(join(dir, nombre), 'utf8')
+      const texto = await readFile(join(dir, nombre), 'utf8')
       console.log(`Aplicando ${nombre}...`)
-      await client.query('BEGIN')
       try {
-        await client.query(sql)
-        await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [
-          nombre,
-        ])
-        await client.query('COMMIT')
+        // sql.begin abre la transacción y hace COMMIT/ROLLBACK solo; unsafe()
+        // sin parámetros usa el protocolo simple, así que acepta archivos con
+        // varias sentencias.
+        await sql.begin(async (trx) => {
+          await trx.unsafe(texto)
+          await trx`INSERT INTO schema_migrations (name) VALUES (${nombre})`
+        })
       } catch (error) {
-        await client.query('ROLLBACK')
         throw new Error(`Falló ${nombre}: ${(error as Error).message}`, {
           cause: error,
         })
@@ -61,7 +61,7 @@ export async function migrate(dir: string = DIR_POR_DEFECTO): Promise<string[]> 
     console.log(`Listo. ${pendientes.length} migración(es) aplicada(s).`)
     return pendientes
   } finally {
-    await client.end()
+    await sql.end()
   }
 }
 
