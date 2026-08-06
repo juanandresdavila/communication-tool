@@ -439,6 +439,21 @@ base tiene migraciones que no están en disco, o si aparece una anterior a la
 - **NO agregar `Co-Authored-By: Claude`** ni líneas de autoría de IA.
 - Prefijos convencionales (`feat:`, `fix:`, `chore:`, `docs:`, `ci:`).
 - Commits chicos y revisables.
+- **Los PR se mergean con `--rebase` o `--merge`, NUNCA con `--squash`.**
+  Preferencia explícita del usuario: quiere ver todos los commits en `main`, no
+  una bola sola. Aplastar tira justamente lo que hace útiles a los commits
+  chicos — el porqué de cada paso.
+
+  Los `(#N)` que hay en la historia hasta el PR #14 son squashes viejos, de
+  antes de que esto estuviera escrito: `Fase 5: scheduler (#12)` eran cuatro
+  commits y quedó uno. No se rehace nada, pero no se repite.
+- **Con squashes en la historia, el `main` local se diverge solo.** Un worktree
+  creado desde ese `main` puede arrancar varias fases atrás sin avisar — pasó
+  en esta sesión. Comparar siempre contra `origin/main`:
+
+  ```bash
+  git fetch origin && git log --oneline -3 origin/main
+  ```
 
 ## Ante la duda
 
