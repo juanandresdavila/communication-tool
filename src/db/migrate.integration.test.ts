@@ -2,7 +2,7 @@ import { copyFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Client } from '@neondatabase/serverless'
+import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { migrate } from './migrate.js'
 
@@ -15,10 +15,9 @@ correr('migrate contra una base real', () => {
   let dir: string
 
   async function limpiar() {
-    const client = new Client(DATABASE_URL)
-    await client.connect()
-    await client.query('DROP TABLE IF EXISTS _migration_smoke')
-    await client.query(
+    const client = postgres(DATABASE_URL, { max: 1 })
+    await client.unsafe('DROP TABLE IF EXISTS _migration_smoke')
+    await client.unsafe(
       "DELETE FROM schema_migrations WHERE name = '9999_smoke.sql'",
     )
     await client.end()
@@ -63,9 +62,8 @@ correr('migrate contra una base real', () => {
     const segunda = await migrate(dir)
     expect(segunda).toEqual([])
 
-    const client = new Client(DATABASE_URL)
-    await client.connect()
-    const { rows } = await client.query<{ count: string }>(
+    const client = postgres(DATABASE_URL, { max: 1 })
+    const rows = await client.unsafe<{ count: string }[]>(
       "SELECT count(*)::text AS count FROM information_schema.tables WHERE table_name = '_migration_smoke'",
     )
     await client.end()

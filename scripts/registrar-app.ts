@@ -1,4 +1,4 @@
-import { Client } from '@neondatabase/serverless'
+import postgres from 'postgres'
 import { hashApiKey } from '../src/identity/api-key.js'
 
 /**
@@ -47,10 +47,11 @@ const unlinked =
   arg('unlinked-message') ??
   `Hola. Para usar este bot vinculá tu cuenta: entrá a ${name}, generá un código y mandámelo con /vincular <código>.`
 
-const client = new Client(process.env.DATABASE_URL)
-await client.connect()
+const urlBase = process.env.DATABASE_URL
+if (!urlBase) throw new Error('Falta DATABASE_URL')
+const client = postgres(urlBase, { max: 1 })
 
-const { rows } = await client.query<{ id: string }>(
+const rows = await client.unsafe<{ id: string }[]>(
   `INSERT INTO apps (slug, name, api_key_hash, delivery_url,
                      schedule_callback_url, delivery_secret_env)
    VALUES ($1, $2, $3, $4, $5, $6)
@@ -69,7 +70,7 @@ if (!fila) throw new Error('El INSERT de apps no devolvió el id')
 // El ON CONFLICT va por `slug` y no por (app_id, channel), aunque ese único
 // también exista: el slug es lo que viaja en la URL del webhook y lo que
 // identifica al bot de forma estable entre corridas.
-await client.query(
+await client.unsafe(
   `INSERT INTO bots (app_id, channel, slug, username, token_env,
                      webhook_secret_env, unlinked_message)
    VALUES ($1, 'telegram', $2, $3, $4, $5, $6)

@@ -1,4 +1,4 @@
-import { Client } from '@neondatabase/serverless'
+import postgres from 'postgres'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createSql } from '../client.js'
 import type {
@@ -29,9 +29,8 @@ correr('repositorios contra una base real', () => {
   let appId = ''
 
   async function limpiar() {
-    const c = new Client(DATABASE_URL)
-    await c.connect()
-    await c.query('DELETE FROM apps WHERE slug = $1', [SLUG_APP])
+    const c = postgres(DATABASE_URL, { max: 1 })
+    await c.unsafe('DELETE FROM apps WHERE slug = $1', [SLUG_APP])
     await c.end()
   }
 
@@ -43,9 +42,8 @@ correr('repositorios contra una base real', () => {
     linkCodes = createLinkCodesRepo(sql)
 
     await limpiar()
-    const c = new Client(DATABASE_URL)
-    await c.connect()
-    const { rows } = await c.query<{ id: string }>(
+    const c = postgres(DATABASE_URL, { max: 1 })
+    const rows = await c.unsafe<{ id: string }[]>(
       `INSERT INTO apps (slug, name, api_key_hash, api_key_hash_next,
                          delivery_url, delivery_secret_env)
        VALUES ($1, 'Test', 'hash-actual', 'hash-nueva',
@@ -57,7 +55,7 @@ correr('repositorios contra una base real', () => {
     const fila = rows[0]
     if (!fila) throw new Error('No se pudo crear la app de prueba')
     appId = fila.id
-    await c.query(
+    await c.unsafe(
       `INSERT INTO bots (app_id, channel, slug, token_env,
                          webhook_secret_env, unlinked_message)
        VALUES ($1, 'telegram', $2, 'TOKEN_TEST', 'SECRET_TEST', 'vinculate')`,
