@@ -30,6 +30,10 @@ export function createSql(databaseUrl: string): Sql {
       },
     },
     onnotice: () => {},
+    // Los prepared statements fallan detrás de un pooler en modo transacción
+    // (el PgBouncer de las URLs -pooler de Neon). Desactivarlos es inocuo
+    // contra un Postgres directo y evita un error que solo aparece en prod.
+    prepare: false,
   })
 }
 
