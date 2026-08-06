@@ -26,10 +26,10 @@
     "build:client": "tsc -p tsconfig.client.json"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0",
     "@vercel/functions": "^3.7.6",
     "croner": "^10.0.1",
     "hono": "^4.12.32",
+    "postgres": "^3.4.9",
     "zod": "^4.4.3"
   },
   "devDependencies": {
