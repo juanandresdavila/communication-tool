@@ -7,11 +7,25 @@
  * que vive en Telegram y no en el repo.
  *
  *     bun run scripts/ver-circuito.ts
+ *
+ * **Necesita el `DATABASE_URL` del VPS, no el del `.env` local.** Desde la
+ * migración self-hosted, la base de producción es el Postgres del container;
+ * el `.env` de acá conserva la de Neon, renombrada a `DATABASE_URL_ROLLBACK`
+ * justamente para que este script no la lea sin querer. Leerla no da error:
+ * responde bien, con datos congelados en el corte — la peor forma de fallar
+ * para un diagnóstico.
  */
 import postgres from 'postgres'
 
 const url = process.env.DATABASE_URL
-if (!url) throw new Error('Falta DATABASE_URL')
+if (!url) {
+  throw new Error(
+    'Falta DATABASE_URL. Este script consulta PRODUCCIÓN, que desde la ' +
+      'migración es el Postgres del VPS: correlo por ssh, o pasale la cadena ' +
+      'del VPS explícita. El .env local tiene la de Neon como ' +
+      'DATABASE_URL_ROLLBACK y NO sirve para diagnosticar.',
+  )
+}
 const c = postgres(url, { max: 1 })
 
 const entrantes = await c.unsafe(
