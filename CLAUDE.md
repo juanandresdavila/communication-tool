@@ -237,6 +237,21 @@ Cualquier cosa que firme, verifique un secreto o hable con Telegram
 cargar los secretos a mano en el `.env` sacándolos de su fuente original
 (BotFather para el token del bot; los demás, regenerándolos).
 
+**Dónde está cada token de bot, en claro:**
+
+| Bot | Fuente legible |
+|---|---|
+| `@gymtrackerjaddbot` | El `.env.local` de **gym-tracker**, como `TELEGRAM_BOT_TOKEN` |
+| `@studymasterjaddbot` | El `.env` de acá, como `TELEGRAM_TOKEN_STUDY` |
+
+El de gimnasio **no** está en el `.env` de este repo: ahí figura como
+`TELEGRAM_TOKEN_GYM="[SENSITIVE]"`, que no sirve. Que la copia buena viva en
+gym-tracker es un resabio de cuando hablaba con Telegram directo — el spec dice
+que después de migrar el token tenía que desaparecer de ahí, y no pasó. No es
+urgente, pero conviene saberlo antes de buscarlo en el lugar equivocado, que es
+lo que hacen `scripts/ver-webhook.ts` y el rollback de §El corte: los dos lo
+leen del `.env.local` de gym-tracker justamente por esto.
+
 `vercel link` deja además un `.env.local` con un token OIDC que no se usa para
 nada acá y se puede ignorar.
 
