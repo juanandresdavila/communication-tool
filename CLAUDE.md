@@ -10,6 +10,21 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 
 ## Estado del proyecto
 
+> **comm-tool corre SELF-HOSTED en el VPS de OVH desde el 2026-08-08.**
+> URL pública: `https://comm.jadd.com.ar` (Cloudflare Tunnel → Caddy → container,
+> cero puertos abiertos). Stack en `/opt/stacks/comm-tool/` del VPS (`ssh vps`):
+> app en Bun (`src/server.ts`) + Postgres 18 en Docker. El ticker es un systemd
+> timer (`comm-tick.timer`, cada 15 min) — ya NO es cron-job.org. Deploy:
+> `cd /opt/src/communication-tool && git pull && cd /opt/stacks/comm-tool &&
+> docker compose build app && docker compose up -d app`.
+> Plan y detalle: docs/superpowers/plans/2026-08-06-migracion-vps.md.
+>
+> **Rollback transitorio:** el deploy viejo en Vercel + Neon queda intacto
+> (~1 semana desde el corte). Volver = `setWebhook` a
+> `https://communication-tool-beta.vercel.app/webhooks/telegram/gym` + revertir
+> `COMM_TOOL_URL`/`COMM_TOOL_DELIVERY_SECRET` en gym-tracker (el delivery secret
+> se ROTÓ en la migración; el de Vercel viejo sigue en su propio env).
+>
 > **comm-tool está en el camino crítico de GymTracker desde el 2026-08-02.**
 > El webhook del bot apunta acá y los entrantes se entregan a
 > `/api/messaging/inbound` de GymTracker. Si comm-tool se cae, el bot de
@@ -86,10 +101,11 @@ persistiendo el crudo antes del ack, entrega firmada con HMAC al `delivery_url`
 de la app, backoff de 5 intentos, `/internal/tick` y `/internal/replay/:id`
 detrás de un Bearer propio. 149 tests.
 
-El ticker externo corre en **cron-job.org cada 15 minutos** contra
-`/internal/tick`. Sin él, los intentos 3 a 5 no se disparan: los dos primeros
-ocurren dentro de la invocación del webhook, y en serverless no queda ningún
-proceso vivo entre requests que despierte al resto.
+El ticker corre como **systemd timer en el VPS** (`comm-tick.timer`, cada 15
+minutos) contra `http://127.0.0.1:8787/internal/tick`. Sin él, los intentos 3 a
+5 no se disparan: los dos primeros ocurren dentro de la invocación del webhook.
+(Hasta el corte al VPS era cron-job.org contra el deploy de Vercel; ese job
+quedó neutralizado.)
 
 Fase 1 — Identidad completa (2026-07-29, verificada end-to-end contra
 producción). Esquema de identidad (`apps`, `bots`, `contacts`, `link_codes`),

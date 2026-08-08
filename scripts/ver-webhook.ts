@@ -16,8 +16,7 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 
-const ESPERADO =
-  'https://communication-tool-beta.vercel.app/webhooks/telegram/gym'
+const ESPERADO = 'https://comm.jadd.com.ar/webhooks/telegram/gym'
 
 async function token(): Promise<string> {
   const delEntorno = process.env.TELEGRAM_BOT_TOKEN
