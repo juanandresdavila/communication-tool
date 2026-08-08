@@ -179,6 +179,20 @@ dos lados a la vez.
 
 ## Setup en una máquina nueva
 
+> **El `.env` local ya NO describe producción.** Desde la migración al VPS, la
+> base viva es el Postgres del container y los secretos viven en el `.env` del
+> stack en `/opt/stacks/comm-tool/`. Lo de abajo describe el deploy de Vercel +
+> Neon, que hoy es el **rollback**. Léelo con eso en mente.
+>
+> Por eso la cadena de Neon quedó renombrada a **`DATABASE_URL_ROLLBACK`**: con
+> el nombre viejo, cualquier script de diagnóstico se conectaba a ella sin
+> error y mostraba datos congelados en el corte — todo se veía sano y nada era
+> actual, que es la peor forma de fallar cuando estás diagnosticando. Ahora
+> `scripts/ver-circuito.ts` falla al arrancar y dice dónde está la buena.
+>
+> **Los scripts de diagnóstico consultan PRODUCCIÓN**, así que hay que correrlos
+> contra el VPS (`ssh vps`) o pasarles su `DATABASE_URL` explícito.
+
 Todos los secretos viven en Vercel, así que el `.env` se baja, no se escribe a
 mano:
 
@@ -187,6 +201,14 @@ bun install
 bun --bun x vercel link --yes --project communication-tool
 bun --bun x vercel env pull .env --environment=production --yes
 ```
+
+**Y hay claves que `vercel env pull` NO trae y no se pueden recuperar de
+ningún lado.** `GYM_API_KEY`, `STUDY_API_KEY`, `TELEGRAM_TOKEN_STUDY` y
+`TELEGRAM_WEBHOOK_SECRET_STUDY` se generaron a mano; en Vercel están marcadas
+*Sensitive*, así que solo existen en el `.env` local. Un `vercel env pull` pisa
+el archivo entero y se las lleva puestas: **hacer copia antes**. Si se pierden,
+la salida es regenerarlas y rotar los dos lados con
+`scripts/registrar-app.ts`, que es idempotente justamente para eso.
 
 **Eso trae UNA sola variable usable, no cinco.** Medido el 2026-08-02:
 `DATABASE_URL` baja en claro, y `INTERNAL_SECRET`, `TELEGRAM_TOKEN_GYM`,
