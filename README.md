@@ -93,3 +93,7 @@ reintentos, y salientes.
 **El webhook del bot no apunta a este servicio hoy**, así que el camino de
 entrada está inerte en producción. Ver [`CLAUDE.md`](CLAUDE.md) para el estado
 detallado, los gotchas del tooling y las fases siguientes.
+
+## Licencia
+
+MIT — ver [`LICENSE`](LICENSE).
