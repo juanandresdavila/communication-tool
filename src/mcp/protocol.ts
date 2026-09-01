@@ -26,6 +26,8 @@ export const CODIGO = {
   unsupportedVersion: -32022,
 } as const
 
+const CLAVE_VERSION = 'io.modelcontextprotocol/protocolVersion'
+
 export interface HeadersMcp {
   protocolVersion: string | null
   method: string | null
@@ -99,13 +101,43 @@ export function analizarPedido(crudo: unknown, headers: HeadersMcp): Analisis {
   }
   const id = sobre.id
   const params = objeto(sobre.params) ?? {}
+  const meta = objeto(params._meta) ?? {}
+  const versionCuerpo =
+    typeof meta[CLAVE_VERSION] === 'string' ? meta[CLAVE_VERSION] : null
+
+  // El header y el cuerpo tienen que decir lo mismo. Si un intermediario
+  // rutea por el header y el servidor ejecuta por el cuerpo, que discrepen es
+  // un agujero, no una molestia.
+  if (
+    headers.protocolVersion !== null &&
+    versionCuerpo !== null &&
+    headers.protocolVersion !== versionCuerpo
+  ) {
+    return falla(
+      400,
+      id,
+      CODIGO.headerMismatch,
+      `MCP-Protocol-Version "${headers.protocolVersion}" no coincide con el cuerpo "${versionCuerpo}".`,
+    )
+  }
+
+  const version = headers.protocolVersion ?? versionCuerpo
+  if (version !== null && !VERSIONES_SOPORTADAS.includes(version)) {
+    return falla(
+      400,
+      id,
+      CODIGO.unsupportedVersion,
+      `Versión de protocolo no soportada: ${version}.`,
+      { supported: [...VERSIONES_SOPORTADAS] },
+    )
+  }
 
   return {
     tipo: 'pedido',
     id,
     method: sobre.method,
     params,
-    version: headers.protocolVersion,
-    moderna: headers.protocolVersion === VERSION_ACTUAL,
+    version,
+    moderna: version === VERSION_ACTUAL,
   }
 }

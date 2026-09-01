@@ -73,3 +73,68 @@ describe('analizarPedido: sobre JSON-RPC', () => {
     expect(r).toMatchObject({ tipo: 'pedido', moderna: true, version: VERSION_ACTUAL })
   })
 })
+
+describe('analizarPedido: versión del protocolo', () => {
+  it('toma la versión del cuerpo cuando no viene el header', () => {
+    const r = analizarPedido(
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {
+          _meta: {
+            'io.modelcontextprotocol/protocolVersion': VERSION_ACTUAL,
+            'io.modelcontextprotocol/clientCapabilities': {},
+          },
+        },
+      },
+      SIN_HEADERS,
+    )
+
+    expect(r).toMatchObject({ tipo: 'pedido', version: VERSION_ACTUAL, moderna: true })
+  })
+
+  it('rechaza header y cuerpo que dicen versiones distintas', () => {
+    const r = analizarPedido(
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {
+          _meta: { 'io.modelcontextprotocol/protocolVersion': '2025-11-25' },
+        },
+      },
+      { protocolVersion: VERSION_ACTUAL, method: 'tools/list', name: null },
+    )
+
+    expect(r).toMatchObject({
+      tipo: 'falla',
+      estado: 400,
+      id: 1,
+      code: CODIGO.headerMismatch,
+    })
+  })
+
+  it('rechaza una versión que no soportamos y lista las que sí', () => {
+    const r = analizarPedido(
+      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+      { protocolVersion: '2030-01-01', method: 'tools/list', name: null },
+    )
+
+    expect(r).toMatchObject({
+      tipo: 'falla',
+      estado: 400,
+      code: CODIGO.unsupportedVersion,
+      data: { supported: [VERSION_ACTUAL, '2025-11-25', '2025-06-18'] },
+    })
+  })
+
+  it('acepta una versión legacy conocida sin exigirle nada moderno', () => {
+    const r = analizarPedido(
+      { jsonrpc: '2.0', id: 1, method: 'initialize' },
+      { protocolVersion: '2025-11-25', method: null, name: null },
+    )
+
+    expect(r).toMatchObject({ tipo: 'pedido', moderna: false })
+  })
+})
