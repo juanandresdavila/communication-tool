@@ -1463,12 +1463,15 @@ import { createFakeAppsRepo } from '../test-support/fake-repos.js'
 const CLAVE = 'ct_clave_de_spark'
 
 function armarAppEntera() {
-  return createApp({
-    ...createFakeDeps(),
-    apps: createFakeAppsRepo([{ hash: hashApiKey(CLAVE), app: unApp() }]),
-    contacts: createFakeContactsRepo([unContacto()]),
-    bots: createFakeBotsRepo([unBot()]),
-  })
+  // createFakeDeps recibe un objeto de overrides, no un spread: su firma es
+  // createFakeDeps(over: Partial<Deps> = {}).
+  return createApp(
+    createFakeDeps({
+      apps: createFakeAppsRepo([{ hash: hashApiKey(CLAVE), app: unApp() }]),
+      contacts: createFakeContactsRepo([unContacto()]),
+      bots: createFakeBotsRepo([unBot()]),
+    }),
+  )
 }
 
 describe('/mcp montado en la app', () => {
@@ -1512,8 +1515,6 @@ describe('/mcp montado en la app', () => {
   })
 })
 ```
-
-Si `createFakeDeps` no acepta ese spread o no existe con esa forma, mirá su firma real en `src/test-support/fake-deps.ts` y adaptá **la construcción del test**, no la implementación. Otros tests de rutas ya lo usan.
 
 - [ ] **Step 2: Correr los tests y verificar que fallan**
 
@@ -1562,7 +1563,7 @@ git commit -m "feat(mcp): montar /mcp detras de la API key y del chequeo de Orig
 - [ ] **Step 1: Correr la suite completa**
 
 Run: `bun run test`
-Expected: PASS. Los 225 tests que ya había más los 42 nuevos. Los 3 archivos `*.integration.test.ts` se saltean solos sin `DATABASE_URL`.
+Expected: `252 passed | 20 skipped (272)` en 31 archivos, 27 pasados y 4 salteados. Medido antes de empezar: 208 pasados y 20 salteados, sobre 228. Este plan agrega 44: 17 en `protocol.test.ts`, 12 en `tools.test.ts` y 15 en `routes/mcp.test.ts`. Los 4 archivos `*.integration.test.ts` se saltean solos sin `DATABASE_URL`.
 
 - [ ] **Step 2: Lint**
 
@@ -1577,7 +1578,7 @@ Expected: sin salida y exit 0. Si tira `ERR_MODULE_NOT_FOUND` o se queja de una 
 - [ ] **Step 4: Simular CI, sin base**
 
 Run: `DATABASE_URL='' bun run test`
-Expected: PASS, con 3 archivos salteados.
+Expected: PASS, con 4 archivos salteados.
 
 - [ ] **Step 5: Commit si hubo arreglos**
 
@@ -1632,7 +1633,15 @@ cualquier cliente MCP y se verificó con uno real. Spec:
 `docs/superpowers/specs/2026-09-01-mcp-para-gemini-spark-design.md`.
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Corregir el conteo de archivos de integración**
+
+En `CLAUDE.md`, sección **Build, test, run**, dice «Los 3 archivos
+`*.integration.test.ts` se saltean solos». Son **4**: `migrate`,
+`inbound-messages`, `outbound-messages` y `repositories`. Cambiar el 3 por un 4
+en esa línea y en la de «Tienen que verse 3 archivos salteados», que pasa a
+decir 4.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add CLAUDE.md
