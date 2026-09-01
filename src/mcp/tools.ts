@@ -1,3 +1,6 @@
+import * as z from 'zod'
+import { enviarSaliente, type SendDeps } from '../outbound/send.js'
+
 /** Telegram corta los mensajes de texto en 4096 caracteres. Va declarado en el
  *  inputSchema para que el modelo parta un digest largo en vez de comerse un
  *  rechazo. */
@@ -72,3 +75,119 @@ export const TOOLS: readonly DefinicionTool[] = [
     },
   },
 ]
+
+export type ResultadoTool =
+  | { tipo: 'ok'; texto: string }
+  | { tipo: 'error_de_ejecucion'; texto: string }
+  | { tipo: 'argumentos_invalidos'; detalle: string }
+  | { tipo: 'tool_desconocida' }
+
+const enviarArgs = z.object({
+  userId: z.string().min(1),
+  text: z.string().min(1).max(LARGO_MAXIMO_TEXTO),
+  idempotencyKey: z.string().min(1).max(200).optional(),
+})
+
+const verArgs = z.object({ userId: z.string().min(1) })
+
+/**
+ * La distinción entre los cuatro resultados no es cosmética: el spec de MCP
+ * separa el error de protocolo, que el modelo no puede arreglar, del error de
+ * ejecución, que sí. Devolver un not_linked como error de protocolo hace que
+ * el modelo abandone en vez de corregirse.
+ */
+export async function ejecutarTool(
+  deps: SendDeps,
+  appId: string,
+  nombre: string,
+  argumentos: unknown,
+): Promise<ResultadoTool> {
+  if (nombre === 'enviar_mensaje') return await enviar(deps, appId, argumentos)
+  if (nombre === 'ver_contacto') return await ver(deps, appId, argumentos)
+  return { tipo: 'tool_desconocida' }
+}
+
+async function enviar(
+  deps: SendDeps,
+  appId: string,
+  argumentos: unknown,
+): Promise<ResultadoTool> {
+  const parseado = enviarArgs.safeParse(argumentos)
+  if (!parseado.success) {
+    return {
+      tipo: 'argumentos_invalidos',
+      detalle: `Argumentos inválidos para enviar_mensaje: ${parseado.error.issues
+        .map((i) => `${i.path.join('.')} ${i.message}`)
+        .join('; ')}`,
+    }
+  }
+
+  // kind queda fijo: un cliente MCP nunca está contestando un entrante, así
+  // que no tiene sentido exponerlo como argumento.
+  const resultado = await enviarSaliente(deps, appId, {
+    userId: parseado.data.userId,
+    text: parseado.data.text,
+    kind: 'notification',
+    replyToMessageId: null,
+    template: null,
+    idempotencyKey: parseado.data.idempotencyKey ?? null,
+  })
+
+  switch (resultado.estado) {
+    case 'sent':
+    case 'duplicate':
+      return {
+        tipo: 'ok',
+        texto: `Mensaje entregado por Telegram (id del proveedor: ${resultado.providerMessageId}).`,
+      }
+    case 'not_linked':
+      return {
+        tipo: 'error_de_ejecucion',
+        texto: `No hay ningún contacto de Telegram vinculado para el userId "${parseado.data.userId}". Probá ver_contacto para confirmar cuál está vinculado.`,
+      }
+    case 'no_bot':
+      return {
+        tipo: 'error_de_ejecucion',
+        texto: 'Esta app no tiene un bot de Telegram activo configurado.',
+      }
+    case 'in_progress':
+      return {
+        tipo: 'error_de_ejecucion',
+        texto:
+          'Ya hay un envío en curso con esa idempotencyKey y no se sabe si salió. No reintentes con la misma clave.',
+      }
+    case 'send_failed':
+      return {
+        tipo: 'error_de_ejecucion',
+        texto: `Telegram rechazó el envío: ${resultado.error}`,
+      }
+  }
+}
+
+async function ver(
+  deps: SendDeps,
+  appId: string,
+  argumentos: unknown,
+): Promise<ResultadoTool> {
+  const parseado = verArgs.safeParse(argumentos)
+  if (!parseado.success) {
+    return {
+      tipo: 'argumentos_invalidos',
+      detalle: 'Argumentos inválidos para ver_contacto: falta userId.',
+    }
+  }
+
+  const contacto = await deps.contacts.findByAppUserId(
+    appId,
+    'telegram',
+    parseado.data.userId,
+  )
+
+  // Nunca se devuelve externalId: la app no conoce el chat id.
+  return {
+    tipo: 'ok',
+    texto: contacto
+      ? `El usuario "${parseado.data.userId}" está vinculado por telegram desde ${contacto.linkedAt}.`
+      : `El usuario "${parseado.data.userId}" no está vinculado.`,
+  }
+}
