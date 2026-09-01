@@ -138,3 +138,89 @@ describe('analizarPedido: versión del protocolo', () => {
     expect(r).toMatchObject({ tipo: 'pedido', moderna: false })
   })
 })
+
+const META_MODERNA = {
+  'io.modelcontextprotocol/protocolVersion': VERSION_ACTUAL,
+  'io.modelcontextprotocol/clientCapabilities': {},
+}
+
+function moderno(
+  method: string,
+  params: Record<string, unknown> = {},
+  headers: Partial<{ method: string | null; name: string | null }> = {},
+) {
+  return analizarPedido(
+    { jsonrpc: '2.0', id: 1, method, params: { ...params, _meta: META_MODERNA } },
+    {
+      protocolVersion: VERSION_ACTUAL,
+      method: headers.method === undefined ? method : headers.method,
+      name: headers.name ?? null,
+    },
+  )
+}
+
+describe('analizarPedido: headers de la era moderna', () => {
+  it('exige el header Mcp-Method', () => {
+    expect(moderno('tools/list', {}, { method: null })).toMatchObject({
+      tipo: 'falla',
+      code: CODIGO.headerMismatch,
+      message: expect.stringContaining('Mcp-Method'),
+    })
+  })
+
+  it('rechaza un Mcp-Method que no coincide con el cuerpo', () => {
+    expect(moderno('tools/list', {}, { method: 'tools/call' })).toMatchObject({
+      tipo: 'falla',
+      code: CODIGO.headerMismatch,
+    })
+  })
+
+  it('exige el header Mcp-Name en tools/call', () => {
+    expect(moderno('tools/call', { name: 'ver_contacto' })).toMatchObject({
+      tipo: 'falla',
+      code: CODIGO.headerMismatch,
+      message: expect.stringContaining('Mcp-Name'),
+    })
+  })
+
+  it('acepta un tools/call con los dos headers correctos', () => {
+    expect(
+      moderno('tools/call', { name: 'ver_contacto' }, { name: 'ver_contacto' }),
+    ).toMatchObject({ tipo: 'pedido', moderna: true })
+  })
+
+  it('decodifica el sentinela base64 del Mcp-Name antes de comparar', () => {
+    expect(
+      moderno(
+        'tools/call',
+        { name: 'ver_contacto' },
+        { name: '=?base64?dmVyX2NvbnRhY3Rv?=' },
+      ),
+    ).toMatchObject({ tipo: 'pedido' })
+  })
+
+  it('exige clientCapabilities en el _meta', () => {
+    const r = analizarPedido(
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/list',
+        params: {
+          _meta: { 'io.modelcontextprotocol/protocolVersion': VERSION_ACTUAL },
+        },
+      },
+      { protocolVersion: VERSION_ACTUAL, method: 'tools/list', name: null },
+    )
+
+    expect(r).toMatchObject({ tipo: 'falla', code: CODIGO.invalidParams })
+  })
+
+  it('no le exige headers a un cliente legacy', () => {
+    const r = analizarPedido(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'x' } },
+      { protocolVersion: '2025-11-25', method: null, name: null },
+    )
+
+    expect(r).toMatchObject({ tipo: 'pedido', moderna: false })
+  })
+})

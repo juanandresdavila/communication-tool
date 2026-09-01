@@ -27,6 +27,7 @@ export const CODIGO = {
 } as const
 
 const CLAVE_VERSION = 'io.modelcontextprotocol/protocolVersion'
+const CLAVE_CAPACIDADES = 'io.modelcontextprotocol/clientCapabilities'
 
 export interface HeadersMcp {
   protocolVersion: string | null
@@ -70,6 +71,71 @@ function objeto(valor: unknown): Record<string, unknown> | null {
     return null
   }
   return valor as Record<string, unknown>
+}
+
+const SENTINELA_BASE64 = /^=\?base64\?(.*)\?=$/
+
+/**
+ * Un valor de header que no entra en ASCII viaja envuelto en `=?base64?...?=`.
+ * Hay que desenvolverlo ANTES de compararlo contra el cuerpo, o un nombre de
+ * tool con acento nunca coincide.
+ */
+function decodificarHeader(valor: string): string {
+  const match = SENTINELA_BASE64.exec(valor)
+  if (!match) return valor
+  return new TextDecoder().decode(
+    Uint8Array.from(atob(match[1] ?? ''), (ch) => ch.charCodeAt(0)),
+  )
+}
+
+function validarHeadersModernos(
+  id: string | number,
+  method: string,
+  params: Record<string, unknown>,
+  meta: Record<string, unknown>,
+  headers: HeadersMcp,
+): Analisis | null {
+  if (meta[CLAVE_CAPACIDADES] === undefined) {
+    return falla(
+      400,
+      id,
+      CODIGO.invalidParams,
+      `Falta ${CLAVE_CAPACIDADES} en params._meta.`,
+    )
+  }
+  // El espejo de headers se exige solo si el cliente mandó headers. Su razón
+  // de ser es que un intermediario que rutea por header no pueda discrepar del
+  // servidor que ejecuta por cuerpo: sin headers no hay con qué discrepar, y
+  // exigirlos ahí solo sirve para rechazar a un cliente que declaró la versión
+  // en el `_meta`, que es donde el spec dice que va.
+  if (headers.protocolVersion === null) return null
+
+  if (headers.method === null) {
+    return falla(400, id, CODIGO.headerMismatch, 'Falta el header Mcp-Method.')
+  }
+  if (headers.method !== method) {
+    return falla(
+      400,
+      id,
+      CODIGO.headerMismatch,
+      `Mcp-Method "${headers.method}" no coincide con el cuerpo "${method}".`,
+    )
+  }
+  if (method !== 'tools/call') return null
+
+  const nombre = typeof params.name === 'string' ? params.name : null
+  if (headers.name === null) {
+    return falla(400, id, CODIGO.headerMismatch, 'Falta el header Mcp-Name.')
+  }
+  if (nombre !== null && decodificarHeader(headers.name) !== nombre) {
+    return falla(
+      400,
+      id,
+      CODIGO.headerMismatch,
+      `Mcp-Name "${headers.name}" no coincide con el cuerpo "${nombre}".`,
+    )
+  }
+  return null
 }
 
 export function analizarPedido(crudo: unknown, headers: HeadersMcp): Analisis {
@@ -130,6 +196,11 @@ export function analizarPedido(crudo: unknown, headers: HeadersMcp): Analisis {
       `Versión de protocolo no soportada: ${version}.`,
       { supported: [...VERSIONES_SOPORTADAS] },
     )
+  }
+
+  if (version === VERSION_ACTUAL) {
+    const problema = validarHeadersModernos(id, sobre.method, params, meta, headers)
+    if (problema) return problema
   }
 
   return {
