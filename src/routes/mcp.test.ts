@@ -1,10 +1,14 @@
 import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
 import type { TelegramClient } from '../channels/telegram/client.js'
+import { createApp } from '../create-app.js'
 import type { Contact } from '../db/ports.js'
+import { hashApiKey } from '../identity/api-key.js'
 import { VERSION_ACTUAL } from '../mcp/protocol.js'
 import type { ConVariablesDeApp } from '../middleware/api-key-auth.js'
+import { createFakeDeps } from '../test-support/fake-deps.js'
 import {
+  createFakeAppsRepo,
   createFakeBotsRepo,
   createFakeContactsRepo,
   createFakeOutboundMessagesRepo,
@@ -219,5 +223,60 @@ describe('POST /mcp: metodos y verbos', () => {
   it('GET y DELETE devuelven 405: esta revision no tiene stream ni sesiones', async () => {
     expect((await armar().request('/mcp')).status).toBe(405)
     expect((await armar().request('/mcp', { method: 'DELETE' })).status).toBe(405)
+  })
+})
+
+const CLAVE = 'ct_clave_de_spark'
+
+function armarAppEntera() {
+  // createFakeDeps recibe un objeto de overrides, no un spread: su firma es
+  // createFakeDeps(over: Partial<Deps> = {}).
+  return createApp(
+    createFakeDeps({
+      apps: createFakeAppsRepo([{ hash: hashApiKey(CLAVE), app: unApp() }]),
+      contacts: createFakeContactsRepo([unContacto()]),
+      bots: createFakeBotsRepo([unBot()]),
+    }),
+  )
+}
+
+describe('/mcp montado en la app', () => {
+  it('sin API key no pasa', async () => {
+    const res = await armarAppEntera().request('/mcp', {
+      method: 'POST',
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+
+    expect(res.status).toBe(401)
+  })
+
+  it('con API key lista las tools', async () => {
+    const res = await armarAppEntera().request('/mcp', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${CLAVE}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('un request con header Origin no pasa, ni siquiera con API key', async () => {
+    const res = await armarAppEntera().request('/mcp', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${CLAVE}`,
+        Origin: 'https://sitio-cualquiera.example',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })
+
+    expect(res.status).toBe(403)
+  })
+
+  it('una URL inexistente sigue siendo 404, no 401', async () => {
+    // El middleware va montado en '/mcp' y no en '*' justamente por esto.
+    const res = await armarAppEntera().request('/no-existe')
+
+    expect(res.status).toBe(404)
   })
 })

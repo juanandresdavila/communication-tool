@@ -17,6 +17,7 @@ import { contactRoutes } from './routes/contacts.js'
 import { healthRoutes } from './routes/health.js'
 import { internalRoutes } from './routes/internal.js'
 import { linkCodeRoutes } from './routes/link-codes.js'
+import { mcpRoutes, sinOrigen } from './routes/mcp.js'
 import { messageRoutes } from './routes/messages.js'
 import { scheduleRoutes } from './routes/schedules.js'
 import { telegramWebhookRoutes } from './routes/telegram-webhook.js'
@@ -70,6 +71,15 @@ export function createApp(deps: Deps): Hono {
   v1.route('/', messageRoutes(deps))
   v1.route('/', scheduleRoutes(deps))
   app.route('/', v1)
+
+  // El servidor MCP. Misma autenticación que /v1: la API key de la app. El
+  // chequeo de Origin va ANTES de la auth, porque es una defensa contra que un
+  // navegador llegue acá, y eso no debería depender de tener la clave.
+  const mcp = new Hono<ConVariablesDeApp>()
+  mcp.use('/mcp', sinOrigen())
+  mcp.use('/mcp', apiKeyAuth(deps.apps))
+  mcp.route('/', mcpRoutes(deps))
+  app.route('/', mcp)
 
   return app
 }
