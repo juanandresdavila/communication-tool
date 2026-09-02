@@ -117,6 +117,15 @@ El bot `@gymtrackerjaddbot` (id `8867091101`) está dado de alta con slug `gym`.
 
 Fase 0 — Scaffold completa: Hono sobre Bun, runner de migraciones, CI, `/health`.
 
+Servidor MCP **completo** (2026-09-01). `POST /mcp` con `enviar_mensaje` y
+`ver_contacto`, para que un agente externo pueda mandar mensajes por los bots.
+Motivado por Gemini Spark, que hoy **no se puede conectar desde Argentina**:
+sus custom MCP exigen residencia en Estados Unidos. El endpoint sirve a
+cualquier cliente MCP. **Falta la verificación contra producción**: hasta que
+un cliente real mande un mensaje que llegue al Telegram de Juan, esto está
+probado solo por la suite. Spec:
+`docs/superpowers/specs/2026-09-01-mcp-para-gemini-spark-design.md`.
+
 **Próxima fase:** Fase 6 — Study Master (segundo bot, recordatorios de
 entregas). Generar el plan con `superpowers:writing-plans` contra el spec.
 
@@ -362,6 +371,25 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   Un `pending` con `next_attempt_at` ya vencido y que no se mueve significa
   que el ticker no está corriendo. Un `failed` se reprocesa con
   `POST /internal/replay/:messageId`.
+- **El servidor MCP vive en `POST /mcp`** y expone dos tools de salida,
+  `enviar_mensaje` y `ver_contacto`. Se autentica con la misma API key que
+  `/v1`. Habla las dos eras del protocolo: la revisión 2026-07-28, con
+  `server/discover` y metadata por request, y la vieja con `initialize`.
+
+  Tres respuestas que parecen bugs y no lo son:
+  - **403 sin más explicación**: el request trajo header `Origin`. Es
+    deliberado, ningún cliente MCP legítimo es un navegador.
+  - **400 con `-32020`**: los headers `MCP-Protocol-Version`, `Mcp-Method` o
+    `Mcp-Name` no coinciden con el cuerpo. Solo se exige cuando el cliente
+    declaró la revisión 2026-07-28 **y mandó el header de versión**: si la
+    declaró solo en el `_meta` del cuerpo, no hay headers que puedan discrepar
+    y no se le exige ninguno.
+  - **404 con `-32601`**: método desconocido. El 404 es lo que el spec pide
+    para distinguir un servidor moderno de uno legacy, no una ruta mal escrita.
+
+  **No hay tools de programados a propósito.** El scheduler dispara posteando
+  a un `schedule_callback_url` HTTP y un cliente MCP no expone ninguno: un
+  programado creado desde ahí se marcaría `failed` sin postear a nadie.
 
 ## Required reading
 
@@ -458,7 +486,7 @@ bun run typecheck   # tsc --noEmit
 bun run db:migrate  # aplica migraciones pendientes
 ```
 
-CI corre lint + typecheck + test en cada PR y push a main. Los 3 archivos
+CI corre lint + typecheck + test en cada PR y push a main. Los 4 archivos
 `*.integration.test.ts` se saltean solos si no hay `DATABASE_URL` — y también
 si la hay pero no se la pasa explícita, ver el gotcha del `.env`.
 
@@ -471,7 +499,7 @@ Al verificar a mano, **no encadenar con pipes**: `bun run lint | tail` devuelve
 el exit code de `tail` y tapa el fallo. Usar `set -e` y comandos sueltos.
 
 **Para simular CI (sin base), usar `DATABASE_URL='' bun run test`.** Tienen que
-verse 3 archivos salteados. `env -u DATABASE_URL` hoy también funciona —medido—
+verse 4 archivos salteados. `env -u DATABASE_URL` hoy también funciona —medido—
 pero la variable explícita vacía gana en cualquier caso y no depende de si bun
 propaga el `.env` al proceso hijo, que es justo lo que cambia entre versiones.
 
