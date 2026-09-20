@@ -60,12 +60,27 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     if (!update) return c.json({ ok: true })
 
     const token = deps.secrets(bot.tokenEnv)
-    const responder = (texto: string) =>
-      deps.telegram.sendMessage(token, update.chatId, texto)
+
+    // Las respuestas que origina el webhook salen FUERA del camino síncrono,
+    // igual que la entrega. Esperarlas retiene un slot del pool de Telegram
+    // (`max_connections`, 40 por defecto) y hace que los mensajes del usuario
+    // real hagan cola atrás de los de un desconocido.
+    const responder = (texto: string): void => {
+      deps.waitUntil(
+        // 🚨 El .catch no es decorativo: sendMessage TIRA cuando Telegram
+        // rechaza, y el waitUntil de server.ts es `void promesa`, que no
+        // captura rejections. Sin esto cada respuesta fallida deja una suelta.
+        // Se traga el error a propósito: no hay a quién avisarle de que un
+        // desconocido no recibió su pista, y reintentar sería amplificar más.
+        deps.telegram
+          .sendMessage(token, update.chatId, texto)
+          .catch(() => undefined),
+      )
+    }
 
     const comando = parseCommand(update.text)
     if (comando && COMANDOS_DE_VINCULACION.has(comando.nombre)) {
-      await responder(await vincular(deps, bot, update.chatId, comando.args))
+      responder(await vincular(deps, bot, update.chatId, comando.args))
       return c.json({ ok: true })
     }
 
@@ -96,7 +111,7 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     if (!guardado) return c.json({ ok: true })
 
     if (!contacto) {
-      await responder(bot.unlinkedMessage)
+      responder(bot.unlinkedMessage)
       return c.json({ ok: true })
     }
 

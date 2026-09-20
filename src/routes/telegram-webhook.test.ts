@@ -27,6 +27,8 @@ function armar(
     contactos?: Contact[]
     codigos?: LinkCode[]
     entregaFalla?: boolean
+    envioFalla?: boolean
+    envioColgado?: boolean
     presupuesto?: PresupuestoDeRespuestas
   } = {},
 ) {
@@ -68,6 +70,12 @@ function armar(
       telegram: {
         async sendMessage(_token, chatId, text) {
           enviados.push({ chatId, text })
+          // Un envío que no resuelve nunca por su cuenta: sirve para probar
+          // que el webhook NO lo espera.
+          if (opts.envioColgado) return new Promise<never>(() => {})
+          if (opts.envioFalla) {
+            throw new Error('Telegram rechazó sendMessage: chat not found')
+          }
           return { messageId: '1' }
         },
       },
@@ -151,6 +159,38 @@ describe('chat no vinculado', () => {
     expect(enviados).toEqual([
       { chatId: '12345', text: 'Vinculá tu cuenta con /vincular <código>.' },
     ])
+  })
+
+  it('contesta 200 sin esperar a que salga la respuesta', async () => {
+    // El envío no resuelve nunca. Si el webhook lo esperara, este test no
+    // fallaría con un assert: colgaría hasta el timeout de Vitest. Es
+    // deliberado, es la única forma honesta de probar que NO se espera.
+    // Ojo: no se llama a drenar(), que por definición nunca terminaría.
+    const { server } = armar({ envioColgado: true })
+
+    const res = await postear(server, update('hola'))
+
+    expect(res.status).toBe(200)
+  })
+
+  it('contesta 200 aunque el envío a Telegram falle', async () => {
+    const { server } = armar({ envioFalla: true })
+
+    const res = await postear(server, update('hola'))
+
+    expect(res.status).toBe(200)
+  })
+
+  it('la promesa que se programa resuelve aunque el envío falle', async () => {
+    // 🚨 El motivo de este test: el waitUntil de server.ts es `void promesa`,
+    // que NO captura rejections, y sendMessage tira cuando Telegram rechaza.
+    // Sin el .catch del webhook, acá quedaría una unhandled rejection que en
+    // producción no la agarra nadie.
+    const { server, drenar } = armar({ envioFalla: true })
+
+    await postear(server, update('hola'))
+
+    await expect(drenar()).resolves.toBeUndefined()
   })
 })
 
