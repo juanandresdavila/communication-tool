@@ -16,6 +16,7 @@ import type {
 import type { DeliverDeps } from '../delivery/deliver.js'
 import { entregarConReintentoInmediato } from '../delivery/deliver.js'
 import { normalizeLinkCode } from '../identity/link-code.js'
+import type { PresupuestoDeRespuestas } from '../presupuesto.js'
 import type { SecretReader } from '../secrets.js'
 
 export interface TelegramWebhookDeps extends DeliverDeps {
@@ -26,6 +27,7 @@ export interface TelegramWebhookDeps extends DeliverDeps {
   secrets: SecretReader
   now: () => Date
   inbound: InboundMessagesRepo
+  presupuesto: PresupuestoDeRespuestas
   waitUntil: (promesa: Promise<unknown>) => void
 }
 

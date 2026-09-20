@@ -11,6 +11,7 @@ import { createOutboundMessagesRepo } from './db/repositories/outbound-messages.
 import { createSchedulesRepo } from './db/repositories/schedules.js'
 import { createDeliveryClient } from './delivery/client.js'
 import { parseEnv } from './env.js'
+import { crearPresupuesto, PRESUPUESTO_POR_DEFECTO } from './presupuesto.js'
 import { createSecretReader } from './secrets.js'
 
 export interface Wired {
@@ -43,6 +44,10 @@ export function wireApp(waitUntil: (promesa: Promise<unknown>) => void): Wired {
     schedules: createSchedulesRepo(sql),
     delivery: createDeliveryClient(),
     internalSecret: env.INTERNAL_SECRET,
+    // Se construye acá, y no adentro de createApp, porque tiene estado: el
+    // invariante es que createApp recibe todo inyectado. De paso queda visible
+    // en la capa de cableado que esto cuenta por proceso.
+    presupuesto: crearPresupuesto(PRESUPUESTO_POR_DEFECTO),
     waitUntil,
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   })

@@ -12,6 +12,11 @@ import {
   unContacto,
   unLinkCode,
 } from '../test-support/fake-repos.js'
+import {
+  crearPresupuesto,
+  PRESUPUESTO_POR_DEFECTO,
+  type PresupuestoDeRespuestas,
+} from '../presupuesto.js'
 import { telegramWebhookRoutes } from './telegram-webhook.js'
 
 const SECRETO = 'secreto-del-webhook'
@@ -22,6 +27,7 @@ function armar(
     contactos?: Contact[]
     codigos?: LinkCode[]
     entregaFalla?: boolean
+    presupuesto?: PresupuestoDeRespuestas
   } = {},
 ) {
   const enviados: { chatId: string; text: string }[] = []
@@ -42,6 +48,8 @@ function armar(
       contacts,
       linkCodes,
       inbound,
+      presupuesto:
+        opts.presupuesto ?? crearPresupuesto(PRESUPUESTO_POR_DEFECTO),
       apps: createFakeAppsRepo([{ hash: 'h', app: unApp() }]),
       delivery: {
         async entregar(p) {

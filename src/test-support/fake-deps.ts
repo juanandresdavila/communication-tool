@@ -1,4 +1,5 @@
 import type { Deps } from '../create-app.js'
+import { crearPresupuesto, PRESUPUESTO_POR_DEFECTO } from '../presupuesto.js'
 import { createFakeDb } from './fake-db.js'
 import {
   createFakeAppsRepo,
@@ -34,6 +35,8 @@ export function createFakeDeps(over: Partial<Deps> = {}): Deps {
       },
     },
     internalSecret: 'secreto-interno',
+    // Uno nuevo por llamada: los tests no comparten contador.
+    presupuesto: crearPresupuesto(PRESUPUESTO_POR_DEFECTO),
     waitUntil: () => {},
     sleep: async () => {},
     ...over,
