@@ -413,7 +413,13 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   nace en `sending` y recién después se llama al proveedor. Invertir el orden
   haría que dos reintentos solapados manden dos mensajes.
 - **El crudo se guarda solo en las filas entregables.** Una fila `skipped` —un
-  mensaje de un chat no vinculado— guarda `raw` nulo. No se entrega nunca
+  mensaje de un chat no vinculado— guarda como `raw` el **JSON `null`**, que no
+  es lo mismo que SQL NULL: la columna es `jsonb NOT NULL` y `rawParaBind`
+  (`src/db/repositories/inbound-messages.ts`) inlinea el literal
+  `'null'::jsonb`. 🚨 **`WHERE raw IS NULL` da falso en esas filas**: para
+  contarlas hay que preguntar por `jsonb_typeof(raw) = 'null'`. Medido en
+  producción el 2026-09-20: las `skipped` nuevas pesan **9 bytes** de `raw`
+  contra los **437 de promedio** de las 64 `delivered`. No se entrega nunca
   (`reencolar` filtra por `failed`), no entra en el índice parcial del ticker
   (`WHERE delivery_status = 'pending'`) y su `raw` no lo lee ningún camino: el
   único lector es `cuerpoDeEntrega`. La **fila** sí se conserva, y es la única
@@ -500,6 +506,10 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   parámetro sigue siendo null. Hay que inlinear el literal
   (``sql`'null'::jsonb` ``), que es lo que hace `rawParaBind` en
   `src/db/repositories/inbound-messages.ts`. Medido sobre postgres.js 3.4.9.
+  Al diagnosticar, ojo con la asimetría: el driver lee ese JSON `null` de
+  vuelta como `null` de JavaScript, así que desde el código no se distingue de
+  SQL NULL, pero en SQL sí, `raw IS NULL` da **falso**. Ver la invariante del
+  crudo.
 - **No usar `Bun.sql` ni `bun test`**, aunque la plantilla de `bun init` los
   sugiera. `Bun.sql` es exclusivo de Bun y rompería el deploy en el runtime
   Node de Vercel; Vitest es lo que usa el resto del ecosistema.
