@@ -1032,15 +1032,29 @@ DATABASE_URL="$(grep '^DATABASE_URL=' /opt/stacks/comm-tool/comm-tool.env | cut 
 
 Esperado: PASS. Antes de dar por bueno el resultado, confirmar que el archivo **no se salteó**: la salida tiene que decir `Test Files 1 passed` y no `1 skipped`. Un archivo salteado con la variable puesta significa que no llegó al proceso, y entonces este paso no midió nada.
 
-- [ ] **Step 3: Si falla, aplicar la contingencia**
+- [ ] **Step 3: El arreglo ya está aplicado — verificar que es el correcto**
 
-Si el insert revienta con `null value in column "raw" violates not-null constraint`, entonces postgres.js está produciendo SQL `NULL`. La salida **no** es una migración: es pasar un JSON null explícito. En `src/db/repositories/inbound-messages.ts`, cambiar el bind del `raw` por:
+⚠️ **Corrección a la primera versión de este plan.** La contingencia decía que
+si el insert reventaba había que agregar un `::jsonb`. **Está mal.** Medido el
+2026-09-20 sobre postgres.js 3.4.9, inspeccionando el SQL generado:
 
-```ts
-          ${sql.json((input.raw ?? null) as Json)}::jsonb,
-```
+| Expresión | SQL | Parámetros | ¿SQL NULL? |
+|---|---|---|---|
+| `sql.json(null)` | `VALUES ($1)` | `[null]` | **sí**, viola el `NOT NULL` |
+| `sql.json(null)::jsonb` | `VALUES ($1::jsonb)` | `[null]` | **sí**, igual |
+| ``sql`'null'::jsonb` `` | `VALUES ('null'::jsonb)` | `[]` | no |
+| `sql.json({a:1})` | `VALUES ($1)` | `[{"a":1}]` | no |
 
-y si eso tampoco alcanza, guardar el literal desde el webhook (`raw: contacto ? crudo : {}`) y ajustar en consecuencia los dos tests que esperan `null` (el de la Task 6 y éste), a `toEqual({})`. Dejar anotado en el commit cuál de las dos salió.
+La causa está en el driver: `handleValue` empuja `x.value` (el `null`) al array
+de parámetros, y después `Bind` hace `if (x === null) return b.i32(0xFFFFFFFF)`,
+que es SQL NULL en el protocolo. El serializer de `json` nunca corre, así que un
+cast no puede cambiar nada.
+
+Por eso `src/db/repositories/inbound-messages.ts` lleva un `rawParaBind` que
+elige el fragmento literal cuando el crudo es nulo. Este paso es confirmar que
+el test de integración pasa con eso puesto; si en vez de pasar falla, la salida
+ya no es tocar el driver sino guardar `{}` desde el webhook (`raw: contacto ?
+crudo : {}`) y ajustar a `toEqual({})` los dos tests que esperan `null`.
 
 - [ ] **Step 4: Confirmar que la suite sin base sigue verde**
 
