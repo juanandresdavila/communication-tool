@@ -351,6 +351,21 @@ describe('persistencia y entrega', () => {
     expect(entregados).toHaveLength(0)
   })
 
+  it('no guarda el crudo de un chat no vinculado, pero sí la fila', async () => {
+    // El comentario de arriba del insert dice que el crudo se persiste SIEMPRE
+    // "si el parser de la app o la entrega fallan". Una fila skipped no se
+    // entrega nunca y ningún camino lee su raw, así que esa razón no la cubre.
+    // La FILA sí se conserva: es lo único que avisa que alguien encontró el bot.
+    const { server, inbound, drenar } = armar()
+    await postear(server, update('hola'))
+    await drenar()
+
+    const guardado = await inbound.findById('msg-1')
+    expect(guardado?.deliveryStatus).toBe('skipped')
+    expect(guardado?.text).toBe('hola')
+    expect(guardado?.raw).toBeNull()
+  })
+
   it('contesta 200 aunque la entrega falle', async () => {
     // Un 5xx a Telegram provoca reintentos que ya cubre el backoff propio.
     const { server, drenar } = armar({

@@ -97,8 +97,12 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
       update.chatId,
     )
 
-    // El crudo se persiste SIEMPRE y antes de cualquier otra cosa: si el
-    // parser de la app o la entrega fallan, el dato no se pierde.
+    // El crudo se persiste SIEMPRE y antes de cualquier otra cosa para las
+    // filas ENTREGABLES: si el parser de la app o la entrega fallan, el dato
+    // no se pierde. Una fila `skipped` no entra en esa razón —no se entrega
+    // nunca (`reencolar` filtra por 'failed') y ningún camino lee su `raw`—,
+    // así que guarda el crudo en null. La FILA sí se conserva: es la única
+    // señal de que alguien encontró el bot.
     const guardado = await deps.inbound.insertIfNew({
       botId: bot.id,
       appId: bot.appId,
@@ -108,7 +112,7 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
       appUserId: contacto?.appUserId ?? null,
       text: update.text,
       replyToMessageId: update.replyToMessageId ?? null,
-      raw: crudo,
+      raw: contacto ? crudo : null,
       deliveryStatus: contacto ? 'pending' : 'skipped',
       nextAttemptAt: contacto ? deps.now() : null,
     })
