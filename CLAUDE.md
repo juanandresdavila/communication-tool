@@ -97,7 +97,8 @@ de WhatsApp, que es fase 7. En Telegram no podría dispararse nunca.
 
 Fase 2 — Entrega **completa** (2026-07-30, verificada contra producción).
 `inbound_messages` con dedupe por `(bot_id, provider_update_id)`, el webhook
-persistiendo el crudo antes del ack, entrega firmada con HMAC al `delivery_url`
+persistiendo el crudo de los entrantes entregables antes del ack, entrega
+firmada con HMAC al `delivery_url`
 de la app, backoff de 5 intentos, `/internal/tick` y `/internal/replay/:id`
 detrás de un Bearer propio. 149 tests.
 
@@ -407,6 +408,17 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
 - **Un saliente se reserva antes de mandarse.** La fila de `outbound_messages`
   nace en `sending` y recién después se llama al proveedor. Invertir el orden
   haría que dos reintentos solapados manden dos mensajes.
+- **El crudo se guarda solo en las filas entregables.** Una fila `skipped` —un
+  mensaje de un chat no vinculado— guarda `raw` nulo. No se entrega nunca
+  (`reencolar` filtra por `failed`), no entra en el índice parcial del ticker
+  (`WHERE delivery_status = 'pending'`) y su `raw` no lo lee ningún camino: el
+  único lector es `cuerpoDeEntrega`. La **fila** sí se conserva, y es la única
+  señal de que alguien encontró el bot.
+- **Toda respuesta que origina el webhook está presupuestada**, `/vincular`
+  incluido: 5 por `(bot, chat)` por hora, contadas en memoria del proceso. 🚨
+  Solo cuenta con el deploy self-host del VPS. En el rollback de Vercel cada
+  invocación arranca con el mapa vacío y esto degrada a no limitar nada, que es
+  lo correcto: degrada, no rompe.
 - **Un bot por app y canal**, impuesto por `bots_app_channel_unico`. Sin ese
   índice, "el bot de esta app" depende del orden del `SELECT`.
 - **`src/app.ts` no lee `process.env`.** Recibe sus dependencias inyectadas;
@@ -466,6 +478,24 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   ```bash
   DATABASE_URL="$(grep '^DATABASE_URL=' .env | cut -d= -f2-)" bun run test
   ```
+- **Una respuesta del webhook no se puede `await`ear.** Sale por `waitUntil` y
+  con su propio `.catch`. Dos razones, las dos medidas: esperar a
+  api.telegram.org retiene un slot del pool de Telegram (`max_connections`, 40
+  por defecto) y hace que los mensajes del usuario real hagan cola atrás de los
+  de un desconocido; y `sendMessage` **tira** cuando Telegram rechaza, mientras
+  que el `waitUntil` de `server.ts` es `void promesa`, que no captura
+  rejections. Sin el `.catch`, cada respuesta fallida deja una suelta.
+- **El cliente de Telegram tiene timeout** (`TIMEOUT_TELEGRAM_MS`, 10 s), igual
+  que el de entrega. Hasta el 20/09/2026 no lo tenía y un api.telegram.org
+  colgado colgaba el request: el webhook retenía el slot y el saliente quedaba
+  en `sending` sin marcar.
+- 🚨 **`sql.json(null)` NO produce un JSON null, produce un SQL NULL.**
+  `handleValue` empuja el `null` al array de parámetros y `Bind` lo manda como
+  `i32(0xFFFFFFFF)` sin pasar por el serializer de `json`; contra una columna
+  `jsonb NOT NULL` eso revienta. Un `::jsonb` no cambia nada, porque el
+  parámetro sigue siendo null. Hay que inlinear el literal
+  (``sql`'null'::jsonb` ``), que es lo que hace `rawParaBind` en
+  `src/db/repositories/inbound-messages.ts`. Medido sobre postgres.js 3.4.9.
 - **No usar `Bun.sql` ni `bun test`**, aunque la plantilla de `bun init` los
   sugiera. `Bun.sql` es exclusivo de Bun y rompería el deploy en el runtime
   Node de Vercel; Vitest es lo que usa el resto del ecosistema.
