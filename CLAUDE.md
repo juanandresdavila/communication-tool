@@ -132,8 +132,12 @@ entregas). Generar el plan con `superpowers:writing-plans` contra el spec.
 
 ## El corte, y cómo volver atrás
 
-El webhook de `@gymtrackerjaddbot` apunta a comm-tool desde el 2026-08-02:
-`https://communication-tool-beta.vercel.app/webhooks/telegram/gym`.
+El webhook de `@gymtrackerjaddbot` apunta a comm-tool desde el 2026-08-02, y
+desde la migración al VPS del 2026-08-08 lo hace contra el dominio propio:
+`https://comm.jadd.com.ar/webhooks/telegram/gym`. Verificado el 2026-09-20 con
+`bun run scripts/ver-webhook.ts`: 0 pendientes y sin último error. La URL de
+Vercel —`communication-tool-beta.vercel.app`— es el **rollback** y hoy no
+recibe un solo update.
 
 **Un bot de Telegram tiene un solo webhook y es exclusivo.** El último que
 llama a `setWebhook` se queda con todos los updates; el anterior deja de
@@ -167,7 +171,7 @@ chat. Es lo que se usó para verificar **antes** de mover el registro, y sirve
 igual para diagnosticar después:
 
 ```bash
-curl -s -X POST https://communication-tool-beta.vercel.app/webhooks/telegram/gym \
+curl -s -X POST https://comm.jadd.com.ar/webhooks/telegram/gym \
   -H "X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET_GYM>" \
   -H 'Content-Type: application/json' \
   -d '{"update_id":999001,"message":{"message_id":1,"chat":{"id":<CHAT_ID>,"type":"private"},"date":1785400000,"text":"press banca 3x8 70"}}'
