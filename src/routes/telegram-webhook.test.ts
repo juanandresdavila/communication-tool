@@ -362,3 +362,81 @@ describe('persistencia y entrega', () => {
     expect(res.status).toBe(200)
   })
 })
+
+describe('presupuesto de respuestas', () => {
+  /** Mismo update con otro update_id, para esquivar el dedupe. */
+  function updateN(n: number, text = 'hola', chatId = '12345') {
+    return { ...update(text, chatId), update_id: n }
+  }
+
+  it('deja de contestarle al chat que se pasa del presupuesto', async () => {
+    const { server, enviados } = armar({
+      presupuesto: crearPresupuesto({
+        porVentana: 2,
+        ventanaMs: 3_600_000,
+        maxClaves: 10,
+      }),
+    })
+
+    await postear(server, updateN(1))
+    await postear(server, updateN(2))
+    await postear(server, updateN(3))
+
+    expect(enviados).toHaveLength(2)
+  })
+
+  it('un /vincular también consume presupuesto', async () => {
+    // La regla es única y no tiene excepciones: si /vincular quedara afuera,
+    // seguiría habiendo un camino de amplificación sin tope.
+    const { server, enviados } = armar({
+      presupuesto: crearPresupuesto({
+        porVentana: 1,
+        ventanaMs: 3_600_000,
+        maxClaves: 10,
+      }),
+    })
+
+    await postear(server, updateN(1, '/vincular ZZZZZZ'))
+    await postear(server, updateN(2, '/vincular ZZZZZZ'))
+
+    expect(enviados).toHaveLength(1)
+  })
+
+  it('chats distintos no se comen el presupuesto entre sí', async () => {
+    // Guarda contra la clave equivocada: si se contara por bot en vez de por
+    // (bot, chat), el primer desconocido que llegue dejaría sin respuesta a
+    // todos los demás, incluido alguien que viene a vincularse de verdad.
+    const { server, enviados } = armar({
+      presupuesto: crearPresupuesto({
+        porVentana: 1,
+        ventanaMs: 3_600_000,
+        maxClaves: 10,
+      }),
+    })
+
+    await postear(server, updateN(1, 'hola', '111'))
+    await postear(server, updateN(2, 'hola', '222'))
+
+    expect(enviados.map((e) => e.chatId)).toEqual(['111', '222'])
+  })
+
+  it('el contacto vinculado se entrega igual con el presupuesto agotado', async () => {
+    // Guarda contra la implementación equivocada plausible: poner el
+    // presupuesto delante de la ENTREGA y no solo de la respuesta. Con
+    // porVentana en 0 no sale ninguna respuesta, y la entrega tiene que salir
+    // igual.
+    const { server, entregados, drenar } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+      presupuesto: crearPresupuesto({
+        porVentana: 0,
+        ventanaMs: 3_600_000,
+        maxClaves: 10,
+      }),
+    })
+
+    await postear(server, update('banca 4x10 60'))
+    await drenar()
+
+    expect(entregados).toHaveLength(1)
+  })
+})

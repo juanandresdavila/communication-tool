@@ -60,12 +60,19 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     if (!update) return c.json({ ok: true })
 
     const token = deps.secrets(bot.tokenEnv)
+    const claveDePresupuesto = `${bot.id}:${update.chatId}`
 
     // Las respuestas que origina el webhook salen FUERA del camino síncrono,
     // igual que la entrega. Esperarlas retiene un slot del pool de Telegram
     // (`max_connections`, 40 por defecto) y hace que los mensajes del usuario
     // real hagan cola atrás de los de un desconocido.
     const responder = (texto: string): void => {
+      // Toda respuesta que origina el webhook está presupuestada, sin
+      // excepciones: /vincular también. Es la única forma de que no quede un
+      // camino de amplificación abierto, porque /vincular tiene que poder
+      // contestarle a un desconocido para que la vinculación exista.
+      if (!deps.presupuesto.consumir(claveDePresupuesto, deps.now())) return
+
       deps.waitUntil(
         // 🚨 El .catch no es decorativo: sendMessage TIRA cuando Telegram
         // rechaza, y el waitUntil de server.ts es `void promesa`, que no
