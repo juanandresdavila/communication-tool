@@ -81,6 +81,24 @@ correr('inbound_messages contra una base real', () => {
     expect(leido?.raw).toEqual({ update_id: 1002 })
   }, 30_000)
 
+  it('acepta un raw nulo, que es lo que guardan las filas skipped', async () => {
+    // La columna es jsonb NOT NULL. JSON null es un valor válido y distinto de
+    // SQL NULL, pero que sql.json(null) produzca uno y no el otro hay que
+    // verificarlo contra una base: la suite sin DATABASE_URL no lo ve.
+    const creado = await repo.insertIfNew({
+      ...base('1010'),
+      appUserId: null,
+      raw: null,
+      deliveryStatus: 'skipped' as const,
+      nextAttemptAt: null,
+    })
+    if (!creado) throw new Error('no se insertó')
+
+    const leido = await repo.findById(creado.id)
+    expect(leido?.deliveryStatus).toBe('skipped')
+    expect(leido?.raw).toBeNull()
+  }, 30_000)
+
   it('dos claims simultáneos no entregan el mismo mensaje dos veces', async () => {
     await repo.insertIfNew(base('1003'))
     const ahora = new Date(Date.now() + 60_000)

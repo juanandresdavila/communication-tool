@@ -48,6 +48,21 @@ function aMensaje(f: Fila): InboundMessage {
   }
 }
 
+/**
+ * 🚨 `sql.json(null)` NO produce un JSON null: `handleValue` empuja el `null`
+ * crudo al array de parámetros y `Bind` lo manda como SQL NULL
+ * (`b.i32(0xFFFFFFFF)`) sin pasar nunca por el serializer de json. Contra una
+ * columna `jsonb NOT NULL` eso revienta. Un `::jsonb` tampoco alcanza: el
+ * parámetro sigue siendo null. El literal inline sí, y no lleva parámetro.
+ *
+ * Medido sobre postgres.js 3.4.9 el 2026-09-20 inspeccionando el SQL generado,
+ * no deducido. Las filas `skipped` guardan `raw` nulo, así que este camino se
+ * usa de verdad.
+ */
+function rawParaBind(sql: Sql, raw: unknown) {
+  return raw === null ? sql`'null'::jsonb` : sql.json(raw as Json)
+}
+
 /** Cuánto se reserva un mensaje mientras un tick lo procesa. */
 const LEASE_MS = 5 * 60_000
 
@@ -63,7 +78,7 @@ export function createInboundMessagesRepo(sql: Sql): InboundMessagesRepo {
           ${input.botId}, ${input.appId}, ${input.channel},
           ${input.providerUpdateId}, ${input.externalId}, ${input.appUserId},
           ${input.text}, ${input.replyToMessageId},
-          ${sql.json(input.raw as Json)}, ${input.deliveryStatus},
+          ${rawParaBind(sql, input.raw)}, ${input.deliveryStatus},
           ${input.nextAttemptAt?.toISOString() ?? null}
         )
         ON CONFLICT (bot_id, provider_update_id) DO NOTHING

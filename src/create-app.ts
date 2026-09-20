@@ -21,6 +21,7 @@ import { mcpRoutes, sinOrigen } from './routes/mcp.js'
 import { messageRoutes } from './routes/messages.js'
 import { scheduleRoutes } from './routes/schedules.js'
 import { telegramWebhookRoutes } from './routes/telegram-webhook.js'
+import type { PresupuestoDeRespuestas } from './presupuesto.js'
 import type { SecretReader } from './secrets.js'
 
 export interface Deps {
@@ -38,6 +39,7 @@ export interface Deps {
   schedules: SchedulesRepo
   delivery: DeliveryClient
   internalSecret: string
+  presupuesto: PresupuestoDeRespuestas
   waitUntil: (promesa: Promise<unknown>) => void
   sleep: (ms: number) => Promise<void>
 }

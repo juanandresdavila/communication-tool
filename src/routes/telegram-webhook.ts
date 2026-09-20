@@ -16,6 +16,7 @@ import type {
 import type { DeliverDeps } from '../delivery/deliver.js'
 import { entregarConReintentoInmediato } from '../delivery/deliver.js'
 import { normalizeLinkCode } from '../identity/link-code.js'
+import type { PresupuestoDeRespuestas } from '../presupuesto.js'
 import type { SecretReader } from '../secrets.js'
 
 export interface TelegramWebhookDeps extends DeliverDeps {
@@ -26,6 +27,7 @@ export interface TelegramWebhookDeps extends DeliverDeps {
   secrets: SecretReader
   now: () => Date
   inbound: InboundMessagesRepo
+  presupuesto: PresupuestoDeRespuestas
   waitUntil: (promesa: Promise<unknown>) => void
 }
 
@@ -58,12 +60,34 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     if (!update) return c.json({ ok: true })
 
     const token = deps.secrets(bot.tokenEnv)
-    const responder = (texto: string) =>
-      deps.telegram.sendMessage(token, update.chatId, texto)
+    const claveDePresupuesto = `${bot.id}:${update.chatId}`
+
+    // Las respuestas que origina el webhook salen FUERA del camino síncrono,
+    // igual que la entrega. Esperarlas retiene un slot del pool de Telegram
+    // (`max_connections`, 40 por defecto) y hace que los mensajes del usuario
+    // real hagan cola atrás de los de un desconocido.
+    const responder = (texto: string): void => {
+      // Toda respuesta que origina el webhook está presupuestada, sin
+      // excepciones: /vincular también. Es la única forma de que no quede un
+      // camino de amplificación abierto, porque /vincular tiene que poder
+      // contestarle a un desconocido para que la vinculación exista.
+      if (!deps.presupuesto.consumir(claveDePresupuesto, deps.now())) return
+
+      deps.waitUntil(
+        // 🚨 El .catch no es decorativo: sendMessage TIRA cuando Telegram
+        // rechaza, y el waitUntil de server.ts es `void promesa`, que no
+        // captura rejections. Sin esto cada respuesta fallida deja una suelta.
+        // Se traga el error a propósito: no hay a quién avisarle de que un
+        // desconocido no recibió su pista, y reintentar sería amplificar más.
+        deps.telegram
+          .sendMessage(token, update.chatId, texto)
+          .catch(() => undefined),
+      )
+    }
 
     const comando = parseCommand(update.text)
     if (comando && COMANDOS_DE_VINCULACION.has(comando.nombre)) {
-      await responder(await vincular(deps, bot, update.chatId, comando.args))
+      responder(await vincular(deps, bot, update.chatId, comando.args))
       return c.json({ ok: true })
     }
 
@@ -73,8 +97,12 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
       update.chatId,
     )
 
-    // El crudo se persiste SIEMPRE y antes de cualquier otra cosa: si el
-    // parser de la app o la entrega fallan, el dato no se pierde.
+    // El crudo se persiste SIEMPRE y antes de cualquier otra cosa para las
+    // filas ENTREGABLES: si el parser de la app o la entrega fallan, el dato
+    // no se pierde. Una fila `skipped` no entra en esa razón —no se entrega
+    // nunca (`reencolar` filtra por 'failed') y ningún camino lee su `raw`—,
+    // así que guarda el crudo en null. La FILA sí se conserva: es la única
+    // señal de que alguien encontró el bot.
     const guardado = await deps.inbound.insertIfNew({
       botId: bot.id,
       appId: bot.appId,
@@ -84,7 +112,7 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
       appUserId: contacto?.appUserId ?? null,
       text: update.text,
       replyToMessageId: update.replyToMessageId ?? null,
-      raw: crudo,
+      raw: contacto ? crudo : null,
       deliveryStatus: contacto ? 'pending' : 'skipped',
       nextAttemptAt: contacto ? deps.now() : null,
     })
@@ -94,7 +122,7 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     if (!guardado) return c.json({ ok: true })
 
     if (!contacto) {
-      await responder(bot.unlinkedMessage)
+      responder(bot.unlinkedMessage)
       return c.json({ ok: true })
     }
 

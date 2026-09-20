@@ -103,4 +103,34 @@ describe('createTelegramClient', () => {
       cliente.sendMessage('TOKEN_SECRETO', '1', 'hola'),
     ).rejects.toThrow(/^(?!.*TOKEN_SECRETO).*$/s)
   })
+
+  it('le pasa un AbortSignal al fetch', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 81 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', 'hola')
+
+    expect(llamadas[0]?.init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('aborta el envío cuando vence el timeout', async () => {
+    // Un fetch que no resuelve nunca por su cuenta: la única forma de que este
+    // test termine es que el cliente lo aborte. Sin AbortSignal, el test cuelga
+    // hasta el timeout de Vitest.
+    const fake = async (_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolver, rechazar) => {
+        init?.signal?.addEventListener('abort', () => {
+          rechazar(new Error('The operation was aborted'))
+        })
+      })
+
+    const cliente = createTelegramClient(fake, 10)
+
+    await expect(cliente.sendMessage('TOKEN', '1', 'hola')).rejects.toThrow(
+      /abort/i,
+    )
+  })
 })

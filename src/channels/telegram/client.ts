@@ -13,6 +13,13 @@ export type Fetch = (
 ) => Promise<Response>
 
 /**
+ * Mismo criterio que TIMEOUT_ENTREGA_MS en delivery/deliver.ts. Sin esto, un
+ * api.telegram.org colgado cuelga el request que lo llamó: el webhook retenía
+ * un slot del pool de Telegram y el saliente quedaba en `sending` sin marcar.
+ */
+export const TIMEOUT_TELEGRAM_MS = 10_000
+
+/**
  * Telegram pide un entero. Un id que no lo sea se descarta en vez de romper el
  * envío: el mensaje sin hilo llega, y el mensaje rechazado no.
  */
@@ -30,7 +37,10 @@ function replyParameters(
   }
 }
 
-export function createTelegramClient(fetchImpl: Fetch = fetch): TelegramClient {
+export function createTelegramClient(
+  fetchImpl: Fetch = fetch,
+  timeoutMs: number = TIMEOUT_TELEGRAM_MS,
+): TelegramClient {
   return {
     async sendMessage(token, chatId, text, replyToMessageId) {
       const res = await fetchImpl(
@@ -43,6 +53,7 @@ export function createTelegramClient(fetchImpl: Fetch = fetch): TelegramClient {
             text,
             ...replyParameters(replyToMessageId),
           }),
+          signal: AbortSignal.timeout(timeoutMs),
         },
       )
 
