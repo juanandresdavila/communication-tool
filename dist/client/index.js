@@ -25,6 +25,7 @@ export function createCommToolMessaging(config) {
                     ...(msg.idempotencyKey
                         ? { idempotencyKey: msg.idempotencyKey }
                         : {}),
+                    ...(msg.buttons ? { buttons: msg.buttons } : {}),
                 }),
             });
             const cuerpo = (await res
@@ -38,6 +39,26 @@ export function createCommToolMessaging(config) {
             // El id DEL PROVEEDOR, no el de comm-tool. Es el que después matchea
             // contra el `replyToMessageId` de un entrante.
             return { messageId: cuerpo.providerMessageId };
+        },
+        async editMessage(msg) {
+            const res = await doFetch(`${config.baseUrl}/v1/messages/edit`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${config.apiKey}`,
+                },
+                body: JSON.stringify({
+                    userId: msg.userId,
+                    messageId: msg.messageId,
+                    text: msg.text,
+                    ...(msg.buttons ? { buttons: msg.buttons } : {}),
+                }),
+            });
+            if (!res.ok) {
+                const cuerpo = (await res.json().catch(() => null));
+                // Mismo criterio que sendMessage: solo el código, nunca la clave.
+                throw new Error(`comm-tool rechazó la edición: ${cuerpo?.code ?? res.status}`);
+            }
         },
         async parseIncoming(req) {
             // El cuerpo se lee como texto porque la firma es sobre los bytes
@@ -59,6 +80,12 @@ export function createCommToolMessaging(config) {
                 return null;
             }
             const replyTo = datos['replyToMessageId'];
+            const callback = datos['callback'];
+            const toque = esObjeto(callback) &&
+                typeof callback['data'] === 'string' &&
+                typeof callback['messageId'] === 'string'
+                ? { data: callback['data'], messageId: callback['messageId'] }
+                : undefined;
             return {
                 userId,
                 text,
@@ -67,6 +94,7 @@ export function createCommToolMessaging(config) {
                 ...(typeof replyTo === 'string' ? { replyToMessageId: replyTo } : {}),
                 receivedAt,
                 raw: datos['raw'],
+                ...(toque ? { callback: toque } : {}),
             };
         },
     };

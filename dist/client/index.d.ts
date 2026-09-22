@@ -1,5 +1,5 @@
-import type { Channel, IncomingMessage, Messaging, OutgoingMessage } from './types.js';
-export type { Channel, IncomingMessage, Messaging, OutgoingMessage };
+import type { Messaging } from './types.js';
+export type { Button, Channel, EditMessage, IncomingMessage, Messaging, OutgoingMessage, } from './types.js';
 export { firmaValida, headerDeFirma } from './signature.js';
 export interface CommToolConfig {
     /** Sin barra final, por ejemplo `https://communication-tool-beta.vercel.app`. */
