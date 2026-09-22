@@ -42,6 +42,8 @@ export interface LinkCode {
 
 export type DeliveryStatus = 'pending' | 'delivered' | 'failed' | 'skipped'
 
+export type InboundKind = 'message' | 'callback'
+
 export interface InboundMessage {
   id: string
   botId: string
@@ -52,6 +54,11 @@ export interface InboundMessage {
   appUserId: string | null
   text: string
   replyToMessageId: string | null
+  kind: InboundKind
+  /** Sólo en un toque. Opaco: puede no ser el de ningún botón nuestro. */
+  callbackData: string | null
+  /** Sólo en un toque: el id del proveedor del mensaje que tenía el botón. */
+  callbackMessageId: string | null
   raw: unknown
   receivedAt: string
   deliveryStatus: DeliveryStatus
@@ -113,6 +120,10 @@ export interface InboundMessagesRepo {
     appUserId: string | null
     text: string
     replyToMessageId: string | null
+    /** Default `'message'`: un mensaje no tiene por qué nombrarlo. */
+    kind?: InboundKind
+    callbackData?: string | null
+    callbackMessageId?: string | null
     raw: unknown
     deliveryStatus: DeliveryStatus
     nextAttemptAt: Date | null
