@@ -9,6 +9,7 @@ import {
   unContacto,
   unSaliente,
 } from '../test-support/fake-repos.js'
+import { telegramFalso } from '../test-support/fake-telegram.js'
 import type { PedidoSaliente } from './send.js'
 import { enviarSaliente } from './send.js'
 
@@ -43,6 +44,7 @@ function armar(
   let fallasRestantes = opts.fallas ?? 0
 
   const telegram: TelegramClient = {
+    ...telegramFalso(),
     async sendMessage(token, chatId, text, replyToMessageId) {
       enviados.push({ token, chatId, text, replyToMessageId })
       if (fallasRestantes > 0) {

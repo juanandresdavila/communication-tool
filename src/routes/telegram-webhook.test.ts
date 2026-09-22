@@ -12,6 +12,7 @@ import {
   unContacto,
   unLinkCode,
 } from '../test-support/fake-repos.js'
+import { telegramFalso } from '../test-support/fake-telegram.js'
 import {
   crearPresupuesto,
   PRESUPUESTO_POR_DEFECTO,
@@ -68,6 +69,7 @@ function armar(
         pendientes.push(p)
       },
       telegram: {
+        ...telegramFalso(),
         async sendMessage(_token, chatId, text) {
           enviados.push({ chatId, text })
           // Un envío que no resuelve nunca por su cuenta: sirve para probar

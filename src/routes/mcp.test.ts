@@ -16,10 +16,12 @@ import {
   unBot,
   unContacto,
 } from '../test-support/fake-repos.js'
+import { telegramFalso } from '../test-support/fake-telegram.js'
 import { mcpRoutes } from './mcp.js'
 
 function armar(opts: { contactos?: Contact[] } = {}) {
   const telegram: TelegramClient = {
+    ...telegramFalso(),
     async sendMessage() {
       return { messageId: 'tg-1' }
     },

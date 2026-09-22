@@ -133,4 +133,119 @@ describe('createTelegramClient', () => {
       /abort/i,
     )
   })
+
+  it('manda los botones como reply_markup inline', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 82 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', '¿Lo guardo como…?', null, [
+      [
+        { text: 'Tarea', data: 's1:abc:t:tarea' },
+        { text: 'Nota', data: 's1:abc:t:nota' },
+      ],
+      [{ text: 'Abrir', url: 'https://study.jadd.com.ar' }],
+    ])
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      text: '¿Lo guardo como…?',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Tarea', callback_data: 's1:abc:t:tarea' },
+            { text: 'Nota', callback_data: 's1:abc:t:nota' },
+          ],
+          [{ text: 'Abrir', url: 'https://study.jadd.com.ar' }],
+        ],
+      },
+    })
+  })
+
+  it('no manda reply_markup sin botones', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 83 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', 'hola', null, null)
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      text: 'hola',
+    })
+  })
+
+  it('contesta un toque con answerCallbackQuery', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, { ok: true, result: true })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.answerCallbackQuery('TOKEN', 'cb-1')
+
+    expect(llamadas[0]?.url).toBe(
+      'https://api.telegram.org/botTOKEN/answerCallbackQuery',
+    )
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      callback_query_id: 'cb-1',
+    })
+    expect(llamadas[0]?.init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('edita un mensaje con texto y botones nuevos', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 77 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.editMessageText('TOKEN', '12345', '77', '¿En qué proyecto?', [
+      [{ text: 'Redes', data: 's1:abc:p:0' }],
+    ])
+
+    expect(llamadas[0]?.url).toBe(
+      'https://api.telegram.org/botTOKEN/editMessageText',
+    )
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      message_id: 77,
+      text: '¿En qué proyecto?',
+      reply_markup: {
+        inline_keyboard: [[{ text: 'Redes', callback_data: 's1:abc:p:0' }]],
+      },
+    })
+  })
+
+  it('al editar sin botones manda un teclado vacío, que saca el que había', async () => {
+    // Explícito a propósito: omitir reply_markup también lo saca según la
+    // práctica común, pero la doc no lo dice, y un teclado vacío no deja dudas.
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 77 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.editMessageText('TOKEN', '12345', '77', '✅ Guardado', null)
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toMatchObject({
+      reply_markup: { inline_keyboard: [] },
+    })
+  })
+
+  it('al editar, un rechazo de Telegram nombra el método y no el token', async () => {
+    const { fake } = fetchQueDevuelve(400, {
+      ok: false,
+      description: 'Bad Request: message is not modified',
+    })
+    const cliente = createTelegramClient(fake)
+
+    const intento = cliente.editMessageText('TOKEN_SECRETO', '1', '7', 'x', null)
+
+    await expect(intento).rejects.toThrow(
+      /editMessageText: Bad Request: message is not modified/,
+    )
+    await expect(intento).rejects.toThrow(/^(?!.*TOKEN_SECRETO).*$/s)
+  })
 })

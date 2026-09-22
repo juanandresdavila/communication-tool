@@ -13,12 +13,14 @@ import {
   unBot,
   unContacto,
 } from '../test-support/fake-repos.js'
+import { telegramFalso } from '../test-support/fake-telegram.js'
 import { messageRoutes } from './messages.js'
 
 function armar(
   opts: { contactos?: Contact[]; bots?: Bot[]; falla?: boolean } = {},
 ) {
   const telegram: TelegramClient = {
+    ...telegramFalso(),
     async sendMessage() {
       if (opts.falla) {
         throw new Error('Telegram rechazó sendMessage: chat not found')
