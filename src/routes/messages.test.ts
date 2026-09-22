@@ -19,9 +19,11 @@ import { messageRoutes } from './messages.js'
 function armar(
   opts: { contactos?: Contact[]; bots?: Bot[]; falla?: boolean } = {},
 ) {
+  const botonesEnviados: unknown[] = []
   const telegram: TelegramClient = {
     ...telegramFalso(),
-    async sendMessage() {
+    async sendMessage(_token, _chatId, _text, _replyTo, botones) {
+      botonesEnviados.push(botones)
       if (opts.falla) {
         throw new Error('Telegram rechazó sendMessage: chat not found')
       }
@@ -44,7 +46,7 @@ function armar(
       secrets: () => 'token',
     }),
   )
-  return server
+  return { server, botonesEnviados }
 }
 
 function postear(server: Hono<ConVariablesDeApp>, cuerpo: unknown) {
@@ -59,7 +61,7 @@ const VALIDO = { userId: 'user-1', text: 'hola', kind: 'reply' }
 
 describe('POST /v1/messages', () => {
   it('manda y devuelve los dos ids', async () => {
-    const res = await postear(armar(), VALIDO)
+    const res = await postear(armar().server, VALIDO)
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
@@ -72,7 +74,7 @@ describe('POST /v1/messages', () => {
   it('nunca devuelve el chat_id', async () => {
     const server = armar({
       contactos: [unContacto({ appUserId: 'user-1', externalId: '987654' })],
-    })
+    }).server
     const cuerpo = await (await postear(server, VALIDO)).text()
     expect(cuerpo).not.toContain('987654')
   })
@@ -86,26 +88,26 @@ describe('POST /v1/messages', () => {
       { userId: 'user-1', text: '', kind: 'reply' },
       { userId: 'user-1', text: 'hola', kind: 'grito' },
     ]) {
-      const res = await postear(armar(), malo)
+      const res = await postear(armar().server, malo)
       expect(res.status).toBe(400)
       expect(await res.json()).toEqual({ code: 'invalid_request' })
     }
   })
 
   it('rechaza un texto más largo de lo que Telegram acepta', async () => {
-    const res = await postear(armar(), { ...VALIDO, text: 'a'.repeat(4097) })
+    const res = await postear(armar().server, { ...VALIDO, text: 'a'.repeat(4097) })
     expect(res.status).toBe(400)
   })
 
   it('devuelve 404 not_linked si el usuario no vinculó', async () => {
-    const res = await postear(armar({ contactos: [] }), VALIDO)
+    const res = await postear(armar({ contactos: [] }).server, VALIDO)
 
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ code: 'not_linked' })
   })
 
   it('devuelve 502 si el proveedor rechaza', async () => {
-    const res = await postear(armar({ falla: true }), VALIDO)
+    const res = await postear(armar({ falla: true }).server, VALIDO)
 
     expect(res.status).toBe(502)
     expect(await res.json()).toMatchObject({ code: 'send_failed' })
@@ -113,14 +115,14 @@ describe('POST /v1/messages', () => {
 
   it('devuelve 500 si la app no tiene bot configurado', async () => {
     // No es culpa del request: es configuración nuestra que falta.
-    const res = await postear(armar({ bots: [] }), VALIDO)
+    const res = await postear(armar({ bots: [] }).server, VALIDO)
 
     expect(res.status).toBe(500)
     expect(await res.json()).toEqual({ code: 'no_bot' })
   })
 
   it('repite la misma respuesta ante la misma clave de idempotencia', async () => {
-    const server = armar()
+    const server = armar().server
     const cuerpo = { ...VALIDO, idempotencyKey: 'k-1' }
 
     const primera = await (await postear(server, cuerpo)).json()
@@ -130,12 +132,32 @@ describe('POST /v1/messages', () => {
   })
 
   it('acepta y guarda el template sin usarlo en Telegram', async () => {
-    const res = await postear(armar(), {
+    const res = await postear(armar().server, {
       ...VALIDO,
       kind: 'notification',
       template: { name: 'checkin', vars: { hora: '22:00' } },
     })
     expect(res.status).toBe(200)
+  })
+
+  it('manda los botones a Telegram tal cual vinieron', async () => {
+    const { server, botonesEnviados } = armar()
+    const buttons = [[{ text: 'Tarea', data: 's1:abc:t:tarea' }]]
+
+    const res = await postear(server, { ...VALIDO, buttons })
+
+    expect(res.status).toBe(200)
+    expect(botonesEnviados).toEqual([buttons])
+  })
+
+  it('rechaza con 400 un teclado inválido', async () => {
+    const res = await postear(armar().server, {
+      ...VALIDO,
+      buttons: [[{ text: 'x', data: 'a'.repeat(61) + '🎓' }]],
+    })
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ code: 'invalid_request' })
   })
 })
 

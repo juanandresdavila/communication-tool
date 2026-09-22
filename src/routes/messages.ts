@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import * as z from 'zod'
 import type { ConVariablesDeApp } from '../middleware/api-key-auth.js'
+import { botonesSchema } from '../outbound/botones.js'
 import type { SendDeps } from '../outbound/send.js'
 import { enviarSaliente } from '../outbound/send.js'
 
@@ -22,6 +23,7 @@ const cuerpoSchema = z.object({
     })
     .optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
+  buttons: botonesSchema.optional(),
 })
 
 export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
@@ -42,7 +44,7 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
       replyToMessageId: parseado.data.replyToMessageId ?? null,
       template: parseado.data.template ?? null,
       idempotencyKey: parseado.data.idempotencyKey ?? null,
-      buttons: null,
+      buttons: parseado.data.buttons ?? null,
     })
 
     switch (resultado.estado) {
