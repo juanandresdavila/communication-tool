@@ -1,12 +1,20 @@
 import { firmaValida } from './signature.js'
 import type {
   Channel,
+  EditMessage,
   IncomingMessage,
   Messaging,
   OutgoingMessage,
 } from './types.js'
 
-export type { Channel, IncomingMessage, Messaging, OutgoingMessage }
+export type {
+  Button,
+  Channel,
+  EditMessage,
+  IncomingMessage,
+  Messaging,
+  OutgoingMessage,
+} from './types.js'
 export { firmaValida, headerDeFirma } from './signature.js'
 
 export interface CommToolConfig {
@@ -55,6 +63,7 @@ export function createCommToolMessaging(config: CommToolConfig): Messaging {
           ...(msg.idempotencyKey
             ? { idempotencyKey: msg.idempotencyKey }
             : {}),
+          ...(msg.buttons ? { buttons: msg.buttons } : {}),
         }),
       })
 
@@ -73,6 +82,32 @@ export function createCommToolMessaging(config: CommToolConfig): Messaging {
       // El id DEL PROVEEDOR, no el de comm-tool. Es el que después matchea
       // contra el `replyToMessageId` de un entrante.
       return { messageId: cuerpo.providerMessageId }
+    },
+
+    async editMessage(msg: EditMessage) {
+      const res = await doFetch(`${config.baseUrl}/v1/messages/edit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          userId: msg.userId,
+          messageId: msg.messageId,
+          text: msg.text,
+          ...(msg.buttons ? { buttons: msg.buttons } : {}),
+        }),
+      })
+
+      if (!res.ok) {
+        const cuerpo = (await res.json().catch(() => null)) as {
+          code?: string
+        } | null
+        // Mismo criterio que sendMessage: solo el código, nunca la clave.
+        throw new Error(
+          `comm-tool rechazó la edición: ${cuerpo?.code ?? res.status}`,
+        )
+      }
     },
 
     async parseIncoming(req: Request): Promise<IncomingMessage | null> {
@@ -100,6 +135,13 @@ export function createCommToolMessaging(config: CommToolConfig): Messaging {
       }
 
       const replyTo = datos['replyToMessageId']
+      const callback = datos['callback']
+      const toque =
+        esObjeto(callback) &&
+        typeof callback['data'] === 'string' &&
+        typeof callback['messageId'] === 'string'
+          ? { data: callback['data'], messageId: callback['messageId'] }
+          : undefined
 
       return {
         userId,
@@ -109,6 +151,7 @@ export function createCommToolMessaging(config: CommToolConfig): Messaging {
         ...(typeof replyTo === 'string' ? { replyToMessageId: replyTo } : {}),
         receivedAt,
         raw: datos['raw'],
+        ...(toque ? { callback: toque } : {}),
       }
     },
   }

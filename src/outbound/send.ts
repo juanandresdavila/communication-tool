@@ -1,4 +1,5 @@
 import type { TelegramClient } from '../channels/telegram/client.js'
+import type { Button } from '../client/types.js'
 import type {
   BotsRepo,
   Channel,
@@ -28,6 +29,7 @@ export interface PedidoSaliente {
   replyToMessageId: string | null
   template: OutboundTemplate | null
   idempotencyKey: string | null
+  buttons: Button[][] | null
 }
 
 export type ResultadoSaliente =
@@ -66,6 +68,7 @@ export async function enviarSaliente(
     template: pedido.template,
     replyToMessageId: pedido.replyToMessageId,
     idempotencyKey: pedido.idempotencyKey,
+    buttons: pedido.buttons,
   })
 
   if (!reservado) return await resolverClaveTomada(deps, appId, pedido)
@@ -78,6 +81,7 @@ export async function enviarSaliente(
       contacto.externalId,
       reservado.text,
       reservado.replyToMessageId,
+      reservado.buttons,
     )
     await deps.outbound.marcarEnviado(reservado.id, messageId)
     return { estado: 'sent', mensaje: reservado, providerMessageId: messageId }

@@ -1,3 +1,4 @@
+import type { Button } from '../../client/types.js'
 import type { Json, Sql } from '../client.js'
 import type {
   Channel,
@@ -17,6 +18,7 @@ interface Fila {
   kind: string
   text: string
   template: unknown
+  buttons: unknown
   reply_to_message_id: string | null
   provider_message_id: string | null
   status: string
@@ -35,6 +37,7 @@ function aSaliente(f: Fila): OutboundMessage {
     kind: f.kind as OutboundKind,
     text: f.text,
     template: (f.template ?? null) as OutboundTemplate | null,
+    buttons: (f.buttons ?? null) as Button[][] | null,
     replyToMessageId: f.reply_to_message_id,
     providerMessageId: f.provider_message_id,
     status: f.status as OutboundStatus,
@@ -53,17 +56,19 @@ export function createOutboundMessagesRepo(sql: Sql): OutboundMessagesRepo {
       // El WHERE del DO UPDATE es el que decide. Solo se vuelve a tomar una
       // fila `failed`; si está `sending` o `sent` el UPDATE no afecta ninguna
       // fila, el RETURNING viene vacío, y quien llama se entera de que el
-      // envío no es suyo. Y como el DO UPDATE no toca `text` ni `kind`, un
-      // reintento reenvía el mensaje original aunque el cuerpo haya cambiado.
+      // envío no es suyo. Y como el DO UPDATE no toca `text`, `kind` ni
+      // `buttons`, un reintento reenvía el mensaje original aunque el cuerpo
+      // haya cambiado.
       const filas = (await sql`
         INSERT INTO outbound_messages (
           app_id, contact_id, app_user_id, channel, kind, text, template,
-          reply_to_message_id, idempotency_key, status
+          reply_to_message_id, idempotency_key, status, buttons
         ) VALUES (
           ${input.appId}, ${input.contactId}, ${input.appUserId},
           ${input.channel}, ${input.kind}, ${input.text},
           ${input.template === null ? null : sql.json(input.template as unknown as Json)},
-          ${input.replyToMessageId}, ${input.idempotencyKey}, 'sending'
+          ${input.replyToMessageId}, ${input.idempotencyKey}, 'sending',
+          ${input.buttons ? sql.json(input.buttons as unknown as Json) : null}
         )
         ON CONFLICT (app_id, idempotency_key) DO UPDATE
         SET status = 'sending',

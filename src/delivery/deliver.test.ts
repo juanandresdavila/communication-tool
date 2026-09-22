@@ -51,6 +51,40 @@ function armar(opts: {
 }
 
 describe('intentarEntrega', () => {
+  it('un toque se entrega con callback y texto vacío', async () => {
+    const toque = unMensaje({
+      text: '',
+      kind: 'callback',
+      callbackData: 's1:abc:t:tarea',
+      callbackMessageId: '77',
+    })
+    const { deps, pedidos } = armar({ mensajes: [toque] })
+
+    await intentarEntrega(deps, toque)
+
+    const cuerpo = JSON.parse(pedidos[0]?.cuerpo ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect(cuerpo['text']).toBe('')
+    expect(cuerpo['callback']).toEqual({
+      data: 's1:abc:t:tarea',
+      messageId: '77',
+    })
+  })
+
+  it('un mensaje no lleva callback', async () => {
+    const { deps, pedidos } = armar({})
+
+    await intentarEntrega(deps, unMensaje())
+
+    const cuerpo = JSON.parse(pedidos[0]?.cuerpo ?? '{}') as Record<
+      string,
+      unknown
+    >
+    expect('callback' in cuerpo).toBe(false)
+  })
+
   it('firma y postea al delivery_url de la app', async () => {
     const { deps, pedidos } = armar({})
     await intentarEntrega(deps, unMensaje())

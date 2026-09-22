@@ -76,6 +76,9 @@ export function unMensaje(over: Partial<InboundMessage> = {}): InboundMessage {
     appUserId: 'user-1',
     text: 'banca 4x10 60',
     replyToMessageId: null,
+    kind: 'message',
+    callbackData: null,
+    callbackMessageId: null,
     raw: { update_id: 900_001 },
     receivedAt: '2026-07-29T12:00:00.000Z',
     deliveryStatus: 'pending',
@@ -99,6 +102,7 @@ export function unSaliente(
     kind: 'reply',
     text: 'anotado: banca 4x10 60',
     template: null,
+    buttons: null,
     replyToMessageId: null,
     providerMessageId: null,
     status: 'sending',
@@ -144,6 +148,7 @@ export function createFakeOutboundMessagesRepo(
         error: null,
         createdAt: '2026-08-01T12:00:00.000Z',
         ...input,
+        buttons: input.buttons ?? null,
       }
       mensajes.push(creado)
       return { ...creado }
@@ -213,6 +218,11 @@ export function createFakeInboundMessagesRepo(
         deliveredAt: null,
         lastError: null,
         ...input,
+        // Después del spread: el input puede no traerlos, y la base pone estos
+        // mismos defaults.
+        kind: input.kind ?? 'message',
+        callbackData: input.callbackData ?? null,
+        callbackMessageId: input.callbackMessageId ?? null,
         nextAttemptAt: input.nextAttemptAt?.toISOString() ?? null,
       }
       mensajes.push(creado)

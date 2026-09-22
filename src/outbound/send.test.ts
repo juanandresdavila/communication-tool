@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TelegramClient } from '../channels/telegram/client.js'
+import type { Button } from '../client/types.js'
 import type { Bot, Contact, OutboundMessage } from '../db/ports.js'
 import {
   createFakeBotsRepo,
@@ -9,6 +10,7 @@ import {
   unContacto,
   unSaliente,
 } from '../test-support/fake-repos.js'
+import { telegramFalso } from '../test-support/fake-telegram.js'
 import type { PedidoSaliente } from './send.js'
 import { enviarSaliente } from './send.js'
 
@@ -22,6 +24,7 @@ function unPedido(over: Partial<PedidoSaliente> = {}): PedidoSaliente {
     replyToMessageId: null,
     template: null,
     idempotencyKey: null,
+    buttons: null,
     ...over,
   }
 }
@@ -39,12 +42,14 @@ function armar(
     chatId: string
     text: string
     replyToMessageId: string | null | undefined
+    botones: Button[][] | null | undefined
   }[] = []
   let fallasRestantes = opts.fallas ?? 0
 
   const telegram: TelegramClient = {
-    async sendMessage(token, chatId, text, replyToMessageId) {
-      enviados.push({ token, chatId, text, replyToMessageId })
+    ...telegramFalso(),
+    async sendMessage(token, chatId, text, replyToMessageId, botones) {
+      enviados.push({ token, chatId, text, replyToMessageId, botones })
       if (fallasRestantes > 0) {
         fallasRestantes -= 1
         throw new Error('Telegram rechazó sendMessage: chat not found')
@@ -236,5 +241,40 @@ describe('enviarSaliente', () => {
     )
 
     expect(enviados[1]?.text).toBe('el original')
+  })
+
+  const BOTONES = [[{ text: 'Tarea', data: 's1:abc:t:tarea' }]]
+
+  it('manda los botones y los guarda en la fila', async () => {
+    const { deps, enviados, outbound } = armar()
+
+    await enviarSaliente(
+      deps,
+      APP_ID,
+      unPedido({ buttons: BOTONES, idempotencyKey: 'k-8' }),
+    )
+
+    expect(enviados[0]?.botones).toEqual(BOTONES)
+    expect(
+      (await outbound.findByIdempotencyKey(APP_ID, 'k-8'))?.buttons,
+    ).toEqual(BOTONES)
+  })
+
+  it('reenvía los botones reservados, no los del pedido nuevo', async () => {
+    // Mismo criterio que el texto: la clave identifica al mensaje entero.
+    const { deps, enviados } = armar({ fallas: 1 })
+
+    await enviarSaliente(
+      deps,
+      APP_ID,
+      unPedido({ buttons: BOTONES, idempotencyKey: 'k-9' }),
+    )
+    await enviarSaliente(
+      deps,
+      APP_ID,
+      unPedido({ buttons: null, idempotencyKey: 'k-9' }),
+    )
+
+    expect(enviados[1]?.botones).toEqual(BOTONES)
   })
 })

@@ -188,6 +188,66 @@ describe('sendMessage', () => {
       crear(fake).sendMessage({ userId: 'user-1', text: 'x', kind: 'reply' }),
     ).rejects.toThrow(/^(?!.*clave-de-la-app).*$/s)
   })
+
+  it('manda los botones solo si vienen', async () => {
+    const { fake, llamadas } = fetchQue(200, {
+      messageId: 'u',
+      providerMessageId: '1',
+      status: 'sent',
+    })
+    const buttons = [[{ text: 'Tarea', data: 's1:abc:t:tarea' }]]
+
+    await crear(fake).sendMessage({
+      userId: 'user-1',
+      text: '¿Lo guardo como…?',
+      kind: 'reply',
+      buttons,
+    })
+    await crear(fake).sendMessage({ userId: 'user-1', text: 'x', kind: 'reply' })
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toMatchObject({
+      buttons,
+    })
+    expect('buttons' in JSON.parse(String(llamadas[1]?.init?.body))).toBe(false)
+  })
+})
+
+describe('editMessage', () => {
+  it('postea a /v1/messages/edit con la API key', async () => {
+    const { fake, llamadas } = fetchQue(200, { status: 'edited' })
+    const buttons = [[{ text: 'Redes', data: 's1:abc:p:0' }]]
+
+    await crear(fake).editMessage?.({
+      userId: 'user-1',
+      messageId: '77',
+      text: '¿En qué proyecto?',
+      buttons,
+    })
+
+    expect(llamadas[0]?.url).toBe('https://comm.test/v1/messages/edit')
+    const headers = new Headers(llamadas[0]?.init?.headers)
+    expect(headers.get('Authorization')).toBe(`Bearer ${API_KEY}`)
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      userId: 'user-1',
+      messageId: '77',
+      text: '¿En qué proyecto?',
+      buttons,
+    })
+  })
+
+  it('tira con el código de comm-tool', async () => {
+    const { fake } = fetchQue(404, { code: 'not_linked' })
+    await expect(
+      crear(fake).editMessage?.({ userId: 'user-9', messageId: '77', text: 'x' }),
+    ).rejects.toThrow(/not_linked/)
+  })
+
+  it('nunca incluye la API key en el mensaje de error', async () => {
+    const { fake } = fetchQue(502, { code: 'edit_failed' })
+    await expect(
+      crear(fake).editMessage?.({ userId: 'user-1', messageId: '77', text: 'x' }),
+    ).rejects.toThrow(/^(?!.*clave-de-la-app).*$/s)
+  })
 })
 
 describe('parseIncoming', () => {
@@ -248,5 +308,27 @@ describe('parseIncoming', () => {
   it('devuelve null ante un cuerpo que no es una entrega', async () => {
     const req = entregaFirmada({ cualquiera: 'cosa' })
     expect(await crear(sinRed).parseIncoming(req)).toBeNull()
+  })
+
+  it('devuelve el callback de un toque', async () => {
+    const res = await crear(sinRed).parseIncoming(
+      entregaFirmada({
+        ...ENTREGA,
+        text: '',
+        callback: { data: 's1:abc:t:tarea', messageId: '77' },
+      }),
+    )
+
+    expect(res?.text).toBe('')
+    expect(res?.callback).toEqual({ data: 's1:abc:t:tarea', messageId: '77' })
+  })
+
+  it('un callback mal formado no se inventa: el entrante sale sin callback', async () => {
+    const res = await crear(sinRed).parseIncoming(
+      entregaFirmada({ ...ENTREGA, callback: { data: 5 } }),
+    )
+
+    expect(res).not.toBeNull()
+    expect(res?.callback).toBeUndefined()
   })
 })

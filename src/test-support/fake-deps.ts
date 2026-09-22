@@ -10,6 +10,7 @@ import {
   createFakeOutboundMessagesRepo,
 } from './fake-repos.js'
 import { createFakeSchedulesRepo } from './fake-schedules.js'
+import { telegramFalso } from './fake-telegram.js'
 
 export function createFakeDeps(over: Partial<Deps> = {}): Deps {
   return {
@@ -18,11 +19,7 @@ export function createFakeDeps(over: Partial<Deps> = {}): Deps {
     bots: createFakeBotsRepo([]),
     contacts: createFakeContactsRepo([]),
     linkCodes: createFakeLinkCodesRepo([]),
-    telegram: {
-      async sendMessage() {
-        return { messageId: '1' }
-      },
-    },
+    telegram: telegramFalso(),
     secrets: () => 'secreto',
     now: () => new Date('2026-07-28T12:00:00.000Z'),
     randomBytes: (n) => new Uint8Array(Array.from({ length: n }, (_, i) => i)),

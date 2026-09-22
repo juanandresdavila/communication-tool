@@ -9,6 +9,7 @@ import {
   unBot,
   unContacto,
 } from '../test-support/fake-repos.js'
+import { telegramFalso } from '../test-support/fake-telegram.js'
 import { ejecutarTool, TOOLS } from './tools.js'
 
 describe('TOOLS', () => {
@@ -45,6 +46,7 @@ function armarDeps(
   opts: { contactos?: Contact[]; bots?: Bot[]; falla?: boolean } = {},
 ): SendDeps {
   const telegram: TelegramClient = {
+    ...telegramFalso(),
     async sendMessage() {
       if (opts.falla) throw new Error('Telegram rechazó sendMessage: chat not found')
       return { messageId: 'tg-1' }

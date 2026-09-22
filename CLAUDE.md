@@ -31,6 +31,20 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 > gimnasio deja de registrar series. Ver §El corte, más abajo, que incluye el
 > rollback.
 
+Transporte interactivo **en código** (2026-09-22): botones inline en los
+salientes, los toques (`callback_query`) guardados y entregados como entrantes
+de `kind = 'callback'`, y `POST /v1/messages/edit`. Cliente `v0.3.0`, con todo
+**opcional**: GymTracker sigue en `v0.2.0`. Migración `0005`. 343 tests contra
+un Postgres 18 local (317 sin base, con los 26 de integración salteados). Lo pidió Study
+Master para procesar los mensajes en el chat; el spec vive en ese repo
+(`docs/superpowers/specs/2026-09-22-bot-de-telegram-interactivo-design.md`) y
+el plan acá (`docs/superpowers/plans/2026-09-22-transporte-interactivo.md`).
+
+🚨 **Un bot sólo recibe toques si su webhook los pide**: `setWebhook` con
+`allowed_updates` que incluya `callback_query`. Los bots de Gym y de Study se
+dieron de alta con `["message"]` (así lo dicen sus planes de alta), y así los
+botones no hacen nada **sin ningún error**. Sólo el de Study se re-registra.
+
 Fase 5 — Scheduler **completa** (2026-08-03, verificada contra producción).
 `schedules` con único `(app_id, app_user_id, name)`, `POST /v1/schedules` y
 `DELETE /v1/schedules/:name`, y el disparo de callbacks firmados desde el mismo
@@ -307,6 +321,30 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   Entrantes, salientes y programados, más un aviso si algún programado
   pertenece a una app sin `schedule_callback_url` — que no dispara y se marca
   `failed` sin postear nada.
+- **Re-registrar un bot para que reciba toques**, en el VPS, sin imprimir los
+  secretos. Ejemplo con el de Study:
+
+  ```bash
+  cd /opt/stacks/comm-tool
+  T="$(grep '^TELEGRAM_TOKEN_STUDY=' comm-tool.env | cut -d= -f2- | tr -d '"')"
+  S="$(grep '^TELEGRAM_WEBHOOK_SECRET_STUDY=' comm-tool.env | cut -d= -f2- | tr -d '"')"
+  curl -s -X POST "https://api.telegram.org/bot$T/setWebhook" -H 'Content-Type: application/json' \
+    -d "{\"url\":\"https://comm.jadd.com.ar/webhooks/telegram/study\",\"secret_token\":\"$S\",\"allowed_updates\":[\"message\",\"callback_query\"]}"
+  curl -s "https://api.telegram.org/bot$T/getWebhookInfo"
+  unset T S
+  ```
+
+  Mismo `url` y mismo `secret_token` que antes: lo único que cambia es
+  `allowed_updates`. `setWebhook` es exclusivo, así que el `url` tiene que ser
+  exactamente el que ya estaba: mirarlo con `getWebhookInfo` **antes**.
+- **Un toque que «no hace nada»**: primero `getWebhookInfo` y mirar que
+  `allowed_updates` incluya `callback_query`. Después, las filas:
+
+  ```sql
+  SELECT kind, callback_data, callback_message_id, delivery_status, last_error
+  FROM inbound_messages WHERE kind = 'callback'
+  ORDER BY received_at DESC LIMIT 20;
+  ```
 - **Las variables de entorno en Vercel solo aplican a deploys nuevos.** Cargar
   una y no redeployar deja el servicio con la vieja: el webhook devolvió 500
   hasta hacer `vercel redeploy`. Vale cada vez que se sume un bot.
@@ -419,6 +457,14 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   Solo cuenta con el deploy self-host del VPS. En el rollback de Vercel cada
   invocación arranca con el mapa vacío y esto degrada a no limitar nada, que es
   lo correcto: degrada, no rompe.
+- **Un toque se contesta siempre, y fuera del presupuesto.** `answerCallbackQuery`
+  no le escribe nada al chat, y sin él el botón queda con la barrita de carga
+  (la doc de la Bot API lo exige aunque no haya nada que avisar).
+- **El `data` de un toque es opaco para comm-tool, y puede no ser de ningún
+  botón.** La doc avisa que el mensaje *«can contain no callback buttons with
+  this data»*. Se entrega tal cual y lo valida la app.
+- **Los botones de un saliente viven en su fila**, igual que el texto: un
+  reintento idempotente reenvía lo que dice la fila, no lo que dice el pedido.
 - **Un bot por app y canal**, impuesto por `bots_app_channel_unico`. Sin ese
   índice, "el bot de esta app" depende del orden del `SELECT`.
 - **`src/app.ts` no lee `process.env`.** Recibe sus dependencias inyectadas;

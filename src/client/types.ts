@@ -1,13 +1,34 @@
 /**
- * El contrato de mensajería del spec, §El contrato. Es el MISMO archivo que
- * vive en `src/lib/messaging/types.ts` de GymTracker: que las dos copias no
- * se separen es justamente lo que verifica la suite de conformidad.
+ * El contrato de mensajería del spec, §El contrato. Nació como el MISMO
+ * archivo que vive en `src/lib/messaging/types.ts` de GymTracker y de Study
+ * Master, y que no se separen en lo obligatorio es lo que verifica la suite de
+ * conformidad.
+ *
+ * Desde `v0.3.0` las copias pueden diferir en lo OPCIONAL: botones, toques y
+ * edición entraron así a propósito, para que una app que no los usa se quede
+ * en la versión anterior sin tocar nada.
  *
  * Este archivo no importa nada, ni siquiera de este repo. Es la raíz de que el
  * paquete sea delgado.
  */
 
 export type Channel = 'telegram' | 'whatsapp'
+
+/**
+ * Un botón de un teclado inline. Exactamente uno de `data` o `url`.
+ *
+ * `data` vuelve en `IncomingMessage.callback.data` cuando alguien lo toca. Son
+ * de 1 a 64 BYTES UTF-8, no caracteres: un emoji ocupa 4.
+ *
+ * 🚨 Lo que vuelve puede no ser ninguno de los `data` que mandaste. La doc de
+ * Telegram lo avisa (*«the message originated the query can contain no
+ * callback buttons with this data»*): validalo siempre, como cualquier entrada.
+ */
+export interface Button {
+  text: string
+  data?: string
+  url?: string
+}
 
 export interface IncomingMessage {
   /** El `app_user_id` YA RESUELTO. Nunca un chat_id. */
@@ -27,6 +48,13 @@ export interface IncomingMessage {
   replyToMessageId?: string
   receivedAt: string
   raw: unknown
+  /**
+   * Presente cuando la entrega es un TOQUE de un botón y no un mensaje, y
+   * entonces `text` llega como `""`. `messageId` es el id del proveedor del
+   * mensaje que tenía el botón: el mismo que devolvió `sendMessage`, así que
+   * sirve para editarlo.
+   */
+  callback?: { data: string; messageId: string }
 }
 
 export interface OutgoingMessage {
@@ -51,6 +79,20 @@ export interface OutgoingMessage {
    * porque su respuesta se perdió, y sin clave mandaría el aviso dos veces.
    */
   idempotencyKey?: string
+  /**
+   * Filas de botones inline. Con `idempotencyKey`, un reintento reenvía los
+   * botones de la primera vez, igual que el texto.
+   */
+  buttons?: Button[][]
+}
+
+export interface EditMessage {
+  userId: string
+  /** El id DEL PROVEEDOR: el que devolvió `sendMessage`. */
+  messageId: string
+  text: string
+  /** Sin botones, el teclado que tenía el mensaje se saca. */
+  buttons?: Button[][]
 }
 
 export interface Messaging {
@@ -58,4 +100,9 @@ export interface Messaging {
   sendMessage(msg: OutgoingMessage): Promise<{ messageId: string }>
   /** `null` cuando el request no es un mensaje procesable. */
   parseIncoming(req: Request): Promise<IncomingMessage | null>
+  /**
+   * Edita un mensaje que el bot ya mandó. Opcional porque el transporte de
+   * Telegram directo de GymTracker no lo implementa, y no lo necesita.
+   */
+  editMessage?(msg: EditMessage): Promise<void>
 }

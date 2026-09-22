@@ -147,4 +147,40 @@ correr('inbound_messages contra una base real', () => {
     expect(reencolado?.deliveryStatus).toBe('pending')
     expect(reencolado?.deliveryAttempts).toBe(0)
   }, 30_000)
+
+  it('guarda un toque con su data y el mensaje del bot', async () => {
+    const creado = await repo.insertIfNew({
+      ...base('1020'),
+      text: '',
+      kind: 'callback',
+      callbackData: 's1:abc:t:tarea',
+      callbackMessageId: '77',
+    })
+    if (!creado) throw new Error('no se insertó')
+
+    const leido = await repo.findById(creado.id)
+    expect(leido?.kind).toBe('callback')
+    expect(leido?.callbackData).toBe('s1:abc:t:tarea')
+    expect(leido?.callbackMessageId).toBe('77')
+  }, 30_000)
+
+  it('un entrante sin kind queda como mensaje y sin data', async () => {
+    const creado = await repo.insertIfNew(base('1021'))
+    if (!creado) throw new Error('no se insertó')
+
+    expect(creado.kind).toBe('message')
+    expect(creado.callbackData).toBeNull()
+    expect(creado.callbackMessageId).toBeNull()
+  }, 30_000)
+
+  it('la base rechaza un toque sin data', async () => {
+    await expect(
+      repo.insertIfNew({
+        ...base('1022'),
+        kind: 'callback',
+        callbackData: null,
+        callbackMessageId: '77',
+      }),
+    ).rejects.toThrow(/inbound_callback_completo/)
+  }, 30_000)
 })

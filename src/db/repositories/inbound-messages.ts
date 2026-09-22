@@ -2,6 +2,7 @@ import type { Json, Sql } from '../client.js'
 import type {
   Channel,
   DeliveryStatus,
+  InboundKind,
   InboundMessage,
   InboundMessagesRepo,
 } from '../ports.js'
@@ -16,6 +17,9 @@ interface Fila {
   app_user_id: string | null
   text: string
   reply_to_message_id: string | null
+  kind: string
+  callback_data: string | null
+  callback_message_id: string | null
   raw: unknown
   received_at: string
   delivery_status: string
@@ -36,6 +40,9 @@ function aMensaje(f: Fila): InboundMessage {
     appUserId: f.app_user_id,
     text: f.text,
     replyToMessageId: f.reply_to_message_id,
+    kind: f.kind as InboundKind,
+    callbackData: f.callback_data,
+    callbackMessageId: f.callback_message_id,
     raw: f.raw,
     receivedAt: new Date(f.received_at).toISOString(),
     deliveryStatus: f.delivery_status as DeliveryStatus,
@@ -73,13 +80,15 @@ export function createInboundMessagesRepo(sql: Sql): InboundMessagesRepo {
         INSERT INTO inbound_messages (
           bot_id, app_id, channel, provider_update_id, external_id,
           app_user_id, text, reply_to_message_id, raw, delivery_status,
-          next_attempt_at
+          next_attempt_at, kind, callback_data, callback_message_id
         ) VALUES (
           ${input.botId}, ${input.appId}, ${input.channel},
           ${input.providerUpdateId}, ${input.externalId}, ${input.appUserId},
           ${input.text}, ${input.replyToMessageId},
           ${rawParaBind(sql, input.raw)}, ${input.deliveryStatus},
-          ${input.nextAttemptAt?.toISOString() ?? null}
+          ${input.nextAttemptAt?.toISOString() ?? null},
+          ${input.kind ?? 'message'}, ${input.callbackData ?? null},
+          ${input.callbackMessageId ?? null}
         )
         ON CONFLICT (bot_id, provider_update_id) DO NOTHING
         RETURNING *

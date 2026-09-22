@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import * as z from 'zod'
 import type { ConVariablesDeApp } from '../middleware/api-key-auth.js'
+import { botonesSchema } from '../outbound/botones.js'
+import { editarSaliente } from '../outbound/edit.js'
 import type { SendDeps } from '../outbound/send.js'
 import { enviarSaliente } from '../outbound/send.js'
 
@@ -22,6 +24,16 @@ const cuerpoSchema = z.object({
     })
     .optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
+  buttons: botonesSchema.optional(),
+})
+
+const edicionSchema = z.object({
+  userId: z.string().min(1),
+  // El id DEL PROVEEDOR. Telegram pide un entero, y validarlo acá convierte
+  // un 502 del proveedor en un 400 con causa clara.
+  messageId: z.string().regex(/^\d+$/),
+  text: z.string().min(1).max(LARGO_MAXIMO_TEXTO),
+  buttons: botonesSchema.optional(),
 })
 
 export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
@@ -42,6 +54,7 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
       replyToMessageId: parseado.data.replyToMessageId ?? null,
       template: parseado.data.template ?? null,
       idempotencyKey: parseado.data.idempotencyKey ?? null,
+      buttons: parseado.data.buttons ?? null,
     })
 
     switch (resultado.estado) {
@@ -72,6 +85,33 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
           },
           502,
         )
+    }
+  })
+
+  rutas.post('/v1/messages/edit', async (c) => {
+    const crudo: unknown = await c.req.json().catch(() => null)
+    const parseado = edicionSchema.safeParse(crudo)
+    if (!parseado.success) {
+      return c.json({ code: 'invalid_request' }, 400)
+    }
+
+    const app = c.get('app')
+    const resultado = await editarSaliente(deps, app.id, {
+      userId: parseado.data.userId,
+      messageId: parseado.data.messageId,
+      text: parseado.data.text,
+      buttons: parseado.data.buttons ?? null,
+    })
+
+    switch (resultado.estado) {
+      case 'edited':
+        return c.json({ status: 'edited' })
+      case 'not_linked':
+        return c.json({ code: 'not_linked' }, 404)
+      case 'no_bot':
+        return c.json({ code: 'no_bot' }, 500)
+      case 'edit_failed':
+        return c.json({ code: 'edit_failed', error: resultado.error }, 502)
     }
   })
 
