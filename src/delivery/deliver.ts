@@ -31,6 +31,15 @@ function cuerpoDeEntrega(mensaje: InboundMessage): string {
     replyToMessageId: mensaje.replyToMessageId ?? undefined,
     receivedAt: mensaje.receivedAt,
     raw: mensaje.raw,
+    // Una app en v0.2.0 ignora la clave: su parseIncoming no la mira.
+    ...(mensaje.kind === 'callback'
+      ? {
+          callback: {
+            data: mensaje.callbackData,
+            messageId: mensaje.callbackMessageId,
+          },
+        }
+      : {}),
   })
 }
 
