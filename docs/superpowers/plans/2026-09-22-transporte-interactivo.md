@@ -2524,7 +2524,7 @@ git commit -m "docs: el transporte interactivo, sus invariantes y cómo re-regis
 
 - [ ] **Step 7: Pushear la rama**
 
-🚨 La rama salió de `origin/main` y quedó **trackeándolo**: un `git push` pelado apuntaría a `main`. Siempre con el nombre:
+La rama ya trackea `origin/claude/transporte-interactivo` (se pusheó con el plan). Igual, con el nombre explícito, que no depende de cómo haya quedado configurado el upstream:
 
 ```bash
 git push -u origin claude/transporte-interactivo
