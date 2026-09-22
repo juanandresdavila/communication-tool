@@ -6,6 +6,7 @@ import {
   parseCommand,
   parseTelegramUpdate,
 } from '../channels/telegram/parse-update.js'
+import type { Comando, UpdateDeToque } from '../channels/telegram/types.js'
 import type {
   Bot,
   BotsRepo,
@@ -33,6 +34,15 @@ export interface TelegramWebhookDeps extends DeliverDeps {
 
 const COMANDOS_DE_VINCULACION = new Set(['vincular', 'link'])
 
+function esVinculacion(comando: Comando): boolean {
+  if (COMANDOS_DE_VINCULACION.has(comando.nombre)) return true
+  // `/start <código>` es lo que manda Telegram al abrir t.me/<bot>?start=<código>.
+  // Sin argumento es otra cosa —el primer contacto con el bot, o un usuario ya
+  // vinculado que lo vuelve a abrir— y contestarle «Mandame el código junto al
+  // comando» no tendría sentido.
+  return comando.nombre === 'start' && comando.args !== ''
+}
+
 function secretosIguales(a: string, b: string): boolean {
   const ba = Buffer.from(a, 'utf8')
   const bb = Buffer.from(b, 'utf8')
@@ -58,10 +68,14 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     // descarta: devolverle un error a Telegram provocaría reintentos eternos
     // de algo que nunca vamos a poder procesar.
     if (!update) return c.json({ ok: true })
-    // Provisorio: los toques se descartan hasta que el webhook los procese.
-    if (update.tipo !== 'message') return c.json({ ok: true })
 
     const token = deps.secrets(bot.tokenEnv)
+
+    if (update.tipo === 'callback') {
+      await recibirToque(deps, bot, token, update, crudo)
+      return c.json({ ok: true })
+    }
+
     const claveDePresupuesto = `${bot.id}:${update.chatId}`
 
     // Las respuestas que origina el webhook salen FUERA del camino síncrono,
@@ -88,7 +102,7 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     }
 
     const comando = parseCommand(update.text)
-    if (comando && COMANDOS_DE_VINCULACION.has(comando.nombre)) {
+    if (comando && esVinculacion(comando)) {
       responder(await vincular(deps, bot, update.chatId, comando.args))
       return c.json({ ok: true })
     }
@@ -134,6 +148,65 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
   })
 
   return rutas
+}
+
+/**
+ * Un toque de un botón. Se guarda y se entrega igual que un mensaje —misma
+ * deduplicación por update_id, mismo backoff—, con dos diferencias:
+ *
+ * - `answerCallbackQuery` sale SIEMPRE y FUERA del presupuesto. Sin él el botón
+ *   queda con la barrita de carga (la doc lo exige aunque no haya nada que
+ *   avisar), y no es amplificación: no le escribe nada al chat.
+ * - Nunca es un comando ni recibe `unlinkedMessage`. Un chat no vinculado no
+ *   tiene botones nuestros; si igual llega un toque, se guarda `skipped` y sólo
+ *   se contesta el toque.
+ *
+ * El `data` va tal cual: la doc avisa que puede no ser el de ningún botón, y
+ * validarlo es de la app, que es la que sabe qué significa.
+ */
+async function recibirToque(
+  deps: TelegramWebhookDeps,
+  bot: Bot,
+  token: string,
+  update: UpdateDeToque,
+  crudo: unknown,
+): Promise<void> {
+  const contacto = await deps.contacts.findByExternalId(
+    bot.appId,
+    'telegram',
+    update.chatId,
+  )
+
+  const guardado = await deps.inbound.insertIfNew({
+    botId: bot.id,
+    appId: bot.appId,
+    channel: 'telegram',
+    providerUpdateId: update.updateId,
+    externalId: update.chatId,
+    appUserId: contacto?.appUserId ?? null,
+    text: '',
+    replyToMessageId: null,
+    kind: 'callback',
+    callbackData: update.data,
+    callbackMessageId: update.messageId,
+    raw: contacto ? crudo : null,
+    deliveryStatus: contacto ? 'pending' : 'skipped',
+    nextAttemptAt: contacto ? deps.now() : null,
+  })
+
+  // null = un reintento de Telegram: el toque ya se contestó y ya se entregó.
+  if (!guardado) return
+
+  deps.waitUntil(
+    // Mismo .catch que las respuestas: el waitUntil de server.ts no captura
+    // rejections, y answerCallbackQuery tira cuando Telegram rechaza (por
+    // ejemplo, un toque de hace más de unos segundos).
+    deps.telegram
+      .answerCallbackQuery(token, update.callbackId)
+      .catch(() => undefined),
+  )
+
+  if (contacto) deps.waitUntil(entregarConReintentoInmediato(deps, guardado))
 }
 
 async function vincular(

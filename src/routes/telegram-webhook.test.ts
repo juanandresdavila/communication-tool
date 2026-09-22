@@ -30,10 +30,12 @@ function armar(
     entregaFalla?: boolean
     envioFalla?: boolean
     envioColgado?: boolean
+    respuestaFalla?: boolean
     presupuesto?: PresupuestoDeRespuestas
   } = {},
 ) {
   const enviados: { chatId: string; text: string }[] = []
+  const respondidos: string[] = []
   const entregados: string[] = []
   const contacts = createFakeContactsRepo(opts.contactos ?? [])
   const linkCodes = createFakeLinkCodesRepo(opts.codigos ?? [])
@@ -80,6 +82,12 @@ function armar(
           }
           return { messageId: '1' }
         },
+        async answerCallbackQuery(_token, callbackId) {
+          respondidos.push(callbackId)
+          if (opts.respuestaFalla) {
+            throw new Error('Telegram rechazó answerCallbackQuery: query is too old')
+          }
+        },
       },
     }),
   )
@@ -87,6 +95,7 @@ function armar(
   return {
     server,
     enviados,
+    respondidos,
     entregados,
     contacts,
     linkCodes,
@@ -454,6 +463,145 @@ describe('presupuesto de respuestas', () => {
     await postear(server, update('banca 4x10 60'))
     await drenar()
 
+    expect(entregados).toHaveLength(1)
+  })
+})
+
+function toque(data = 's1:abc:t:tarea', chatId = '12345', updateId = 50) {
+  return {
+    update_id: updateId,
+    callback_query: {
+      id: `cb-${updateId}`,
+      from: { id: Number(chatId), is_bot: false, first_name: 'Juan' },
+      message: {
+        message_id: 77,
+        chat: { id: Number(chatId), type: 'private' },
+        date: 1_785_264_000,
+        text: '¿Lo guardo como…?',
+      },
+      chat_instance: '-1',
+      data,
+    },
+  }
+}
+
+describe('toques de botones', () => {
+  const VINCULADO = [unContacto({ externalId: '12345', appUserId: 'user-1' })]
+
+  it('guarda y entrega el toque de un contacto vinculado', async () => {
+    const { server, inbound, entregados, drenar } = armar({
+      contactos: VINCULADO,
+    })
+
+    const res = await postear(server, toque())
+    await drenar()
+
+    expect(res.status).toBe(200)
+    const guardado = await inbound.findById('msg-1')
+    expect(guardado).toMatchObject({
+      kind: 'callback',
+      text: '',
+      callbackData: 's1:abc:t:tarea',
+      callbackMessageId: '77',
+      appUserId: 'user-1',
+    })
+    expect(entregados).toEqual(['msg-1'])
+  })
+
+  it('contesta el toque con answerCallbackQuery', async () => {
+    const { server, respondidos, drenar } = armar({ contactos: VINCULADO })
+
+    await postear(server, toque())
+    await drenar()
+
+    expect(respondidos).toEqual(['cb-50'])
+  })
+
+  it('contesta el toque aunque el presupuesto del chat esté agotado', async () => {
+    // El presupuesto es contra la amplificación: un toque no le escribe nada
+    // al chat, y sin la respuesta el botón queda cargando para siempre.
+    const { server, respondidos, drenar } = armar({
+      contactos: VINCULADO,
+      presupuesto: crearPresupuesto({
+        porVentana: 0,
+        ventanaMs: 3_600_000,
+        maxClaves: 10,
+      }),
+    })
+
+    await postear(server, toque())
+    await drenar()
+
+    expect(respondidos).toEqual(['cb-50'])
+  })
+
+  it('un toque repetido no se contesta ni se entrega dos veces', async () => {
+    const { server, respondidos, entregados, drenar } = armar({
+      contactos: VINCULADO,
+    })
+
+    await postear(server, toque())
+    await postear(server, toque())
+    await drenar()
+
+    expect(respondidos).toHaveLength(1)
+    expect(entregados).toHaveLength(1)
+  })
+
+  it('el toque de un chat no vinculado se contesta y queda skipped, sin unlinkedMessage', async () => {
+    const { server, inbound, respondidos, enviados, entregados, drenar } =
+      armar()
+
+    await postear(server, toque())
+    await drenar()
+
+    expect(respondidos).toEqual(['cb-50'])
+    expect(enviados).toEqual([])
+    expect(entregados).toEqual([])
+    const guardado = await inbound.findById('msg-1')
+    expect(guardado?.deliveryStatus).toBe('skipped')
+    expect(guardado?.raw).toBeNull()
+  })
+
+  it('contesta 200 y no deja rejections sueltas si answerCallbackQuery falla', async () => {
+    const { server, drenar } = armar({
+      contactos: VINCULADO,
+      respuestaFalla: true,
+    })
+
+    const res = await postear(server, toque())
+
+    expect(res.status).toBe(200)
+    await expect(drenar()).resolves.toBeUndefined()
+  })
+})
+
+describe('/start con código', () => {
+  it('vincula con /start <código>, que es lo que manda el link t.me', async () => {
+    const { server, contacts, inbound, enviados } = armar({
+      codigos: [unLinkCode({ code: 'ABCDEF', appUserId: 'user-1' })],
+    })
+
+    await postear(server, update('/start ABCDEF'))
+
+    expect(enviados[0]?.text).toMatch(/vinculada/i)
+    expect(
+      (await contacts.findByExternalId('app-1', 'telegram', '12345'))?.appUserId,
+    ).toBe('user-1')
+    expect(await inbound.findById('msg-1')).toBeNull()
+  })
+
+  it('/start sin código no es vinculación: sigue el camino de un mensaje', async () => {
+    // Un usuario ya vinculado que abre el bot de nuevo no puede recibir
+    // «Mandame el código junto al comando».
+    const { server, enviados, entregados, drenar } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+    })
+
+    await postear(server, update('/start'))
+    await drenar()
+
+    expect(enviados).toEqual([])
     expect(entregados).toHaveLength(1)
   })
 })
