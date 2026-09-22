@@ -17,7 +17,12 @@ import { telegramFalso } from '../test-support/fake-telegram.js'
 import { messageRoutes } from './messages.js'
 
 function armar(
-  opts: { contactos?: Contact[]; bots?: Bot[]; falla?: boolean } = {},
+  opts: {
+    contactos?: Contact[]
+    bots?: Bot[]
+    falla?: boolean
+    edicionFalla?: string
+  } = {},
 ) {
   const botonesEnviados: unknown[] = []
   const telegram: TelegramClient = {
@@ -28,6 +33,11 @@ function armar(
         throw new Error('Telegram rechazó sendMessage: chat not found')
       }
       return { messageId: 'tg-1' }
+    },
+    async editMessageText() {
+      if (opts.edicionFalla) {
+        throw new Error(`Telegram rechazó editMessageText: ${opts.edicionFalla}`)
+      }
     },
   }
 
@@ -168,6 +178,63 @@ describe('POST /v1/messages montado en la app completa', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(VALIDO),
+    })
+    expect(res.status).toBe(401)
+  })
+})
+
+function editar(server: Hono<ConVariablesDeApp>, cuerpo: unknown) {
+  return server.request('/v1/messages/edit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cuerpo),
+  })
+}
+
+const EDICION = { userId: 'user-1', messageId: '77', text: '✅ Guardado' }
+
+describe('POST /v1/messages/edit', () => {
+  it('edita y contesta 200', async () => {
+    const res = await editar(armar().server, EDICION)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ status: 'edited' })
+  })
+
+  it('rechaza un messageId que no es un entero', async () => {
+    const res = await editar(armar().server, { ...EDICION, messageId: 'abc' })
+    expect(res.status).toBe(400)
+  })
+
+  it('rechaza un teclado inválido', async () => {
+    const res = await editar(armar().server, {
+      ...EDICION,
+      buttons: [[{ text: 'x' }]],
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('devuelve 404 not_linked si el usuario no vinculó', async () => {
+    const res = await editar(armar({ contactos: [] }).server, EDICION)
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ code: 'not_linked' })
+  })
+
+  it('devuelve 502 si Telegram rechaza la edición', async () => {
+    const res = await editar(
+      armar({ edicionFalla: 'Bad Request: message to edit not found' }).server,
+      EDICION,
+    )
+    expect(res.status).toBe(502)
+    expect(await res.json()).toMatchObject({ code: 'edit_failed' })
+  })
+
+  it('devuelve 401 sin Authorization en la app completa', async () => {
+    const app = createApp(createFakeDeps())
+    const res = await app.request('/v1/messages/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(EDICION),
     })
     expect(res.status).toBe(401)
   })
