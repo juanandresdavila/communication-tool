@@ -102,6 +102,7 @@ export function unSaliente(
     kind: 'reply',
     text: 'anotado: banca 4x10 60',
     template: null,
+    buttons: null,
     replyToMessageId: null,
     providerMessageId: null,
     status: 'sending',
@@ -147,6 +148,7 @@ export function createFakeOutboundMessagesRepo(
         error: null,
         createdAt: '2026-08-01T12:00:00.000Z',
         ...input,
+        buttons: input.buttons ?? null,
       }
       mensajes.push(creado)
       return { ...creado }

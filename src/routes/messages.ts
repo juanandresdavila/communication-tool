@@ -42,6 +42,7 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
       replyToMessageId: parseado.data.replyToMessageId ?? null,
       template: parseado.data.template ?? null,
       idempotencyKey: parseado.data.idempotencyKey ?? null,
+      buttons: null,
     })
 
     switch (resultado.estado) {

@@ -1,3 +1,5 @@
+import type { Button } from '../client/types.js'
+
 export type Channel = 'telegram' | 'whatsapp'
 
 export interface App {
@@ -167,6 +169,7 @@ export interface OutboundMessage {
   kind: OutboundKind
   text: string
   template: OutboundTemplate | null
+  buttons: Button[][] | null
   replyToMessageId: string | null
   providerMessageId: string | null
   status: OutboundStatus
@@ -199,6 +202,7 @@ export interface OutboundMessagesRepo {
     kind: OutboundKind
     text: string
     template: OutboundTemplate | null
+    buttons?: Button[][] | null
     replyToMessageId: string | null
     idempotencyKey: string | null
   }): Promise<OutboundMessage | null>

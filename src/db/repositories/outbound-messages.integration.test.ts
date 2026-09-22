@@ -130,4 +130,20 @@ correr('outbound_messages contra una base real', () => {
       vars: { hora: '22:00' },
     })
   }, 30_000)
+
+  it('guarda los botones como objeto y los conserva al re-reservar', async () => {
+    const botones = [[{ text: 'Tarea', data: 's1:abc:t:tarea' }]]
+    const creado = await repo.claim({ ...base('k-7'), buttons: botones })
+    if (!creado) throw new Error('no se reservó')
+    expect(creado.buttons).toEqual(botones)
+
+    await repo.marcarFallido(creado.id, 'boom')
+    const reclamado = await repo.claim({ ...base('k-7'), buttons: null })
+    expect(reclamado?.buttons).toEqual(botones)
+  }, 30_000)
+
+  it('sin botones guarda SQL NULL', async () => {
+    const creado = await repo.claim(base('k-8'))
+    expect(creado?.buttons).toBeNull()
+  }, 30_000)
 })
