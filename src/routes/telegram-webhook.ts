@@ -54,10 +54,12 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
 
     const crudo: unknown = await c.req.json().catch(() => null)
     const update = parseTelegramUpdate(crudo)
-    // Un update que no sabemos leer (callback_query, edición, encuesta) se
-    // acepta y se descarta: devolverle un error a Telegram provocaría
-    // reintentos eternos de algo que nunca vamos a poder procesar.
+    // Un update que no sabemos leer (edición, encuesta) se acepta y se
+    // descarta: devolverle un error a Telegram provocaría reintentos eternos
+    // de algo que nunca vamos a poder procesar.
     if (!update) return c.json({ ok: true })
+    // Provisorio: los toques se descartan hasta que el webhook los procese.
+    if (update.tipo !== 'message') return c.json({ ok: true })
 
     const token = deps.secrets(bot.tokenEnv)
     const claveDePresupuesto = `${bot.id}:${update.chatId}`
