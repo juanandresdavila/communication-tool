@@ -105,6 +105,42 @@ describe('POST /mcp: era legacy', () => {
       'ver_contacto',
     ])
   })
+
+  it('tools/list lleva ttlMs y cacheScope también en la era legacy', async () => {
+    const res = await postear(armar(), { jsonrpc: '2.0', id: 3, method: 'tools/list' })
+
+    expect(await res.json()).toMatchObject({
+      result: { ttlMs: 0, cacheScope: 'private' },
+    })
+  })
+})
+
+describe('POST /mcp: cache hints de la revisión 2026-07-28', () => {
+  // Sin ellos Claude Code conecta pero no ve ninguna tool ("Invalid result for
+  // tools/list"). El SDK oficial no los exige, así que sus tests no lo detectan.
+  it('server/discover lleva ttlMs y cacheScope', async () => {
+    const res = await postear(
+      armar(),
+      { jsonrpc: '2.0', id: 1, method: 'server/discover', params: { _meta: META } },
+      { 'MCP-Protocol-Version': VERSION_ACTUAL, 'Mcp-Method': 'server/discover' },
+    )
+
+    expect(await res.json()).toMatchObject({
+      result: { ttlMs: 0, cacheScope: 'private' },
+    })
+  })
+
+  it('tools/list moderno lleva ttlMs y cacheScope', async () => {
+    const res = await postear(
+      armar(),
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: { _meta: META } },
+      { 'MCP-Protocol-Version': VERSION_ACTUAL, 'Mcp-Method': 'tools/list' },
+    )
+
+    expect(await res.json()).toMatchObject({
+      result: { ttlMs: 0, cacheScope: 'private' },
+    })
+  })
 })
 
 describe('POST /mcp: era moderna', () => {
@@ -180,6 +216,30 @@ describe('POST /mcp: era moderna', () => {
       armar(),
       { jsonrpc: '2.0', id: 5, method: 'tools/list', params: { _meta: META } },
       { 'MCP-Protocol-Version': VERSION_ACTUAL, 'Mcp-Method': 'tools/call' },
+    )
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: -32020 } })
+  })
+
+  it('un Mcp-Name con base64 inválido es 400 con -32020, no un 500', async () => {
+    const res = await postear(
+      armar(),
+      {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'enviar_mensaje',
+          arguments: { userId: 'user-1', text: 'hola' },
+          _meta: META,
+        },
+      },
+      {
+        'MCP-Protocol-Version': VERSION_ACTUAL,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': '=?base64?%%%?=',
+      },
     )
 
     expect(res.status).toBe(400)
