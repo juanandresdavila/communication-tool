@@ -1,3 +1,6 @@
+// organizer (src/mcp/protocol.ts) tiene una copia de este archivo: si se
+// corrige algo acá, corregirlo también allá.
+
 /**
  * Revisión actual del protocolo MCP. Trae metadata por request y
  * `server/discover`; las anteriores usan el handshake `initialize`. Se
@@ -78,13 +81,20 @@ const SENTINELA_BASE64 = /^=\?base64\?(.*)\?=$/
 /**
  * Un valor de header que no entra en ASCII viaja envuelto en `=?base64?...?=`.
  * Hay que desenvolverlo ANTES de compararlo contra el cuerpo, o un nombre de
- * tool con acento nunca coincide.
+ * tool con acento nunca coincide. Un base64 inválido da null: `atob` tira una
+ * DOMException, y el que llama lo trata como un header que no coincide.
  */
-function decodificarHeader(valor: string): string {
+function decodificarHeader(valor: string): string | null {
   const match = SENTINELA_BASE64.exec(valor)
   if (!match) return valor
+  let binario: string
+  try {
+    binario = atob(match[1] ?? '')
+  } catch {
+    return null
+  }
   return new TextDecoder().decode(
-    Uint8Array.from(atob(match[1] ?? ''), (ch) => ch.charCodeAt(0)),
+    Uint8Array.from(binario, (ch) => ch.charCodeAt(0)),
   )
 }
 

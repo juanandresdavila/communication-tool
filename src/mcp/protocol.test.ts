@@ -199,6 +199,19 @@ describe('analizarPedido: headers de la era moderna', () => {
     ).toMatchObject({ tipo: 'pedido' })
   })
 
+  it('un sentinela base64 inválido en Mcp-Name es un header que no coincide, no una excepción', () => {
+    // atob tira una DOMException con '%': sin atraparla, la ruta contestaba 500.
+    expect(
+      moderno('tools/call', { name: 'ver_contacto' }, { name: '=?base64?%%%?=' }),
+    ).toMatchObject({
+      tipo: 'falla',
+      estado: 400,
+      id: 1,
+      code: CODIGO.headerMismatch,
+      message: expect.stringContaining('Mcp-Name'),
+    })
+  })
+
   it('exige clientCapabilities en el _meta', () => {
     const r = analizarPedido(
       {

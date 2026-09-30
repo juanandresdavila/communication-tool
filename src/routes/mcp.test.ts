@@ -186,6 +186,30 @@ describe('POST /mcp: era moderna', () => {
     expect(await res.json()).toMatchObject({ error: { code: -32020 } })
   })
 
+  it('un Mcp-Name con base64 inválido es 400 con -32020, no un 500', async () => {
+    const res = await postear(
+      armar(),
+      {
+        jsonrpc: '2.0',
+        id: 7,
+        method: 'tools/call',
+        params: {
+          name: 'enviar_mensaje',
+          arguments: { userId: 'user-1', text: 'hola' },
+          _meta: META,
+        },
+      },
+      {
+        'MCP-Protocol-Version': VERSION_ACTUAL,
+        'Mcp-Method': 'tools/call',
+        'Mcp-Name': '=?base64?%%%?=',
+      },
+    )
+
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: -32020 } })
+  })
+
   it('una version desconocida es 400 con -32022', async () => {
     const res = await postear(
       armar(),
