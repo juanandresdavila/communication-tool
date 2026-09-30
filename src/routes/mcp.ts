@@ -25,6 +25,14 @@ export function sinOrigen(): MiddlewareHandler {
   }
 }
 
+/**
+ * Obligatorios desde la revisión 2026-07-28 (`CacheableResult`) en server/discover
+ * y tools/list: sin ellos, Claude Code conecta pero no lista las herramientas.
+ * ttlMs 0 porque la lista cambia con cada deploy y pedirla es barato; private
+ * porque el endpoint va detrás de una API key y no se comparte entre clientes.
+ */
+const CACHE_HINTS = { ttlMs: 0, cacheScope: 'private' } as const
+
 function resultado(id: string | number, result: Record<string, unknown>) {
   return { jsonrpc: '2.0', id, result }
 }
@@ -89,6 +97,7 @@ export function mcpRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
             instructions:
               'Manda mensajes de Telegram al usuario de esta app. Solo transporta: no lee ni interpreta contenido, y no recibe respuestas.',
             _meta: { 'io.modelcontextprotocol/serverInfo': SERVER_INFO },
+            ...CACHE_HINTS,
           }),
         )
 
@@ -103,7 +112,9 @@ export function mcpRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
         )
 
       case 'tools/list':
-        return c.json(resultado(id, { resultType: 'complete', tools: [...TOOLS] }))
+        return c.json(
+          resultado(id, { resultType: 'complete', tools: [...TOOLS], ...CACHE_HINTS }),
+        )
 
       case 'tools/call':
         return await llamarTool(c, deps, id, params)

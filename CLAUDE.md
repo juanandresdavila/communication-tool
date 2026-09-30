@@ -426,6 +426,12 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   - **404 con `-32601`**: método desconocido. El 404 es lo que el spec pide
     para distinguir un servidor moderno de uno legacy, no una ruta mal escrita.
 
+  `server/discover` y `tools/list` llevan `ttlMs: 0` y `cacheScope: 'private'`
+  (obligatorios desde la revisión 2026-07-28). Sin ellos Claude Code conecta
+  pero no ve ninguna tool (`tools fetch failed — Invalid result for
+  tools/list`), y los tests con el SDK oficial pasan igual: la prueba que
+  cuenta es `claude mcp list` contra el server.
+
   **No hay tools de programados a propósito.** El scheduler dispara posteando
   a un `schedule_callback_url` HTTP y un cliente MCP no expone ninguno: un
   programado creado desde ahí se marcaría `failed` sin postear a nadie.
