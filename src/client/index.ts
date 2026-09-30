@@ -18,7 +18,7 @@ export type {
 export { firmaValida, headerDeFirma } from './signature.js'
 
 export interface CommToolConfig {
-  /** Sin barra final, por ejemplo `https://communication-tool-beta.vercel.app`. */
+  /** Sin barra final, por ejemplo `https://comm.jadd.com.ar`. */
   baseUrl: string
   /** La API key de la app. Va en el header, nunca en la URL. */
   apiKey: string

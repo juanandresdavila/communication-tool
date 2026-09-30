@@ -146,8 +146,12 @@ entregas). Generar el plan con `superpowers:writing-plans` contra el spec.
 
 ## El corte, y cómo volver atrás
 
-El webhook de `@gymtrackerjaddbot` apunta a comm-tool desde el 2026-08-02:
-`https://communication-tool-beta.vercel.app/webhooks/telegram/gym`.
+El webhook de `@gymtrackerjaddbot` apunta a comm-tool desde el 2026-08-02, y
+desde la migración al VPS del 2026-08-08 lo hace contra el dominio propio:
+`https://comm.jadd.com.ar/webhooks/telegram/gym`. Verificado el 2026-09-20 con
+`bun run scripts/ver-webhook.ts`: 0 pendientes y sin último error. La URL de
+Vercel —`communication-tool-beta.vercel.app`— es el **rollback** y hoy no
+recibe un solo update.
 
 **Un bot de Telegram tiene un solo webhook y es exclusivo.** El último que
 llama a `setWebhook` se queda con todos los updates; el anterior deja de
@@ -181,7 +185,7 @@ chat. Es lo que se usó para verificar **antes** de mover el registro, y sirve
 igual para diagnosticar después:
 
 ```bash
-curl -s -X POST https://communication-tool-beta.vercel.app/webhooks/telegram/gym \
+curl -s -X POST https://comm.jadd.com.ar/webhooks/telegram/gym \
   -H "X-Telegram-Bot-Api-Secret-Token: <TELEGRAM_WEBHOOK_SECRET_GYM>" \
   -H 'Content-Type: application/json' \
   -d '{"update_id":999001,"message":{"message_id":1,"chat":{"id":<CHAT_ID>,"type":"private"},"date":1785400000,"text":"press banca 3x8 70"}}'
@@ -447,7 +451,13 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   nace en `sending` y recién después se llama al proveedor. Invertir el orden
   haría que dos reintentos solapados manden dos mensajes.
 - **El crudo se guarda solo en las filas entregables.** Una fila `skipped` —un
-  mensaje de un chat no vinculado— guarda `raw` nulo. No se entrega nunca
+  mensaje de un chat no vinculado— guarda como `raw` el **JSON `null`**, que no
+  es lo mismo que SQL NULL: la columna es `jsonb NOT NULL` y `rawParaBind`
+  (`src/db/repositories/inbound-messages.ts`) inlinea el literal
+  `'null'::jsonb`. 🚨 **`WHERE raw IS NULL` da falso en esas filas**: para
+  contarlas hay que preguntar por `jsonb_typeof(raw) = 'null'`. Medido en
+  producción el 2026-09-20: las `skipped` nuevas pesan **9 bytes** de `raw`
+  contra los **437 de promedio** de las 64 `delivered`. No se entrega nunca
   (`reencolar` filtra por `failed`), no entra en el índice parcial del ticker
   (`WHERE delivery_status = 'pending'`) y su `raw` no lo lee ningún camino: el
   único lector es `cuerpoDeEntrega`. La **fila** sí se conserva, y es la única
@@ -542,6 +552,10 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   parámetro sigue siendo null. Hay que inlinear el literal
   (``sql`'null'::jsonb` ``), que es lo que hace `rawParaBind` en
   `src/db/repositories/inbound-messages.ts`. Medido sobre postgres.js 3.4.9.
+  Al diagnosticar, ojo con la asimetría: el driver lee ese JSON `null` de
+  vuelta como `null` de JavaScript, así que desde el código no se distingue de
+  SQL NULL, pero en SQL sí, `raw IS NULL` da **falso**. Ver la invariante del
+  crudo.
 - **No usar `Bun.sql` ni `bun test`**, aunque la plantilla de `bun init` los
   sugiera. `Bun.sql` es exclusivo de Bun y rompería el deploy en el runtime
   Node de Vercel; Vitest es lo que usa el resto del ecosistema.
