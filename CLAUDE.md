@@ -48,7 +48,7 @@ ejecución usa `croner`. 225 tests, migración `0004` aplicada.
 name, userId, firedAt }` al `schedule_callback_url` de la app y ella decide qué
 decir. Hay un test que verifica que el cuerpo no contenga texto.
 
-Dos detalles que se pagan caro si se invierten:
+Tres detalles que se pagan caro si se invierten:
 
 - **Al fallar un callback, `next_run_at` vuelve al horario original**, no se
   queda en el lease del claim. Si quedara en el lease, cada reintento
@@ -324,9 +324,10 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   FROM inbound_messages WHERE kind = 'callback'
   ORDER BY received_at DESC LIMIT 20;
   ```
-- **Las variables de entorno en Vercel solo aplican a deploys nuevos.** Cargar
-  una y no redeployar deja el servicio con la vieja: el webhook devolvió 500
-  hasta hacer `vercel redeploy`. Vale cada vez que se sume un bot.
+- **Una variable de entorno nueva no llega sola al servicio.** Va en el `.env`
+  del stack en el servidor y hay que recrear el container de la app para que la
+  lea; si no, el servicio sigue con la vieja y el webhook del bot nuevo devuelve
+  500. Vale cada vez que se sume un bot.
 - **No hay poll contra la base.** Neon se suspende a los 5 minutos de
   inactividad y cobra por hora de cómputo: consultar cada pocos segundos para
   esperar un evento la mantiene despierta y se come el presupuesto. Es la misma

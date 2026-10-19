@@ -7,6 +7,11 @@ import { dispararProgramado } from '../schedules/fire.js'
 /** Tope por tick: acota la duración de la invocación. */
 const LOTE = 25
 
+/** Un throw puede no ser un Error (null, un string): no debe tumbar el catch. */
+function mensajeDe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
   const rutas = new Hono()
 
@@ -24,14 +29,14 @@ export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
         if (resultado === 'failed') fallidos += 1
       } catch (e) {
         errores += 1
-        const motivo = (e as Error).message
+        const motivo = mensajeDe(e)
         console.error(`tick: falló el entrante ${mensaje.id}: ${motivo}`)
         // Sin la marca el mensaje volvería al claim sin contar intentos. Si
         // la marca también tira, el lease lo devuelve más adelante.
         await marcarIntentoFallido(deps, mensaje, deps.now(), motivo).catch(
           (e2: unknown) => {
             console.error(
-              `tick: no se pudo marcar el entrante ${mensaje.id}: ${(e2 as Error).message}`,
+              `tick: no se pudo marcar el entrante ${mensaje.id}: ${mensajeDe(e2)}`,
             )
           },
         )
@@ -50,7 +55,7 @@ export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
       } catch (e) {
         errores += 1
         console.error(
-          `tick: falló el programado ${schedule.id}: ${(e as Error).message}`,
+          `tick: falló el programado ${schedule.id}: ${mensajeDe(e)}`,
         )
         // Se restaura la hora: el lease lo dejaría 5 minutos afuera, y la
         // gracia lo da por perdido si el problema no se arregla.
@@ -58,7 +63,7 @@ export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
           .marcarFallido(schedule.id, deps.now(), new Date(agendadoPara))
           .catch((e2: unknown) => {
             console.error(
-              `tick: no se pudo marcar el programado ${schedule.id}: ${(e2 as Error).message}`,
+              `tick: no se pudo marcar el programado ${schedule.id}: ${mensajeDe(e2)}`,
             )
           })
       }

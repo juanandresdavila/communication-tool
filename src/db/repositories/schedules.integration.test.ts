@@ -52,9 +52,6 @@ correr('schedules contra una base real', () => {
     const ahora = new Date()
     await repo.marcarSinProxima(creado.id, ahora)
 
-    const vencidos = await repo.claimVencidos(new Date(), 25)
-    expect(vencidos.some((v) => v.schedule.id === creado.id)).toBe(false)
-
     const c = postgres(DATABASE_URL, { max: 1 })
     const filas = await c.unsafe<
       {

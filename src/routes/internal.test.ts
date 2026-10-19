@@ -372,6 +372,71 @@ describe('POST /internal/tick', () => {
       ['s1', '2026-07-29T11:58:00.000Z'],
     ])
   })
+
+  it('un throw que no es Error no tumba el catch del tick', async () => {
+    const base = createFakeInboundMessagesRepo([
+      unMensaje({ id: 'm1', nextAttemptAt: '2026-07-29T11:00:00.000Z' }),
+      unMensaje({
+        id: 'm2',
+        providerUpdateId: '900002',
+        nextAttemptAt: '2026-07-29T11:00:00.000Z',
+      }),
+    ])
+    const inbound: InboundMessagesRepo = {
+      ...base,
+      async marcarEntregado(id, fecha) {
+        if (id === 'm1') return Promise.reject(null)
+        return base.marcarEntregado(id, fecha)
+      },
+      async marcarReintento(id, proximo, error) {
+        if (id === 'm1') return Promise.reject('base caída')
+        return base.marcarReintento(id, proximo, error)
+      },
+      async marcarFallido(id, error) {
+        if (id === 'm1') return Promise.reject(undefined)
+        return base.marcarFallido(id, error)
+      },
+    }
+    const { server } = armar({ inbound })
+
+    const res = await tick(server)
+
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({ errores: 1, entregados: 1 })
+    expect((await base.findById('m2'))?.deliveryStatus).toBe('delivered')
+  })
+
+  it('si la marca del programado también tira, el bucle sigue y el entrante se entrega', async () => {
+    const base = createFakeSchedulesRepo([
+      unSchedule({ id: 's1', nextRunAt: '2026-07-29T11:58:00.000Z' }),
+      unSchedule({ id: 's2', nextRunAt: '2026-07-29T11:59:00.000Z' }),
+    ])
+    const schedulesRepo: SchedulesRepo = {
+      ...base,
+      async marcarDisparado(id, fecha, proxima) {
+        if (id === 's1') throw new Error('base caída')
+        return base.marcarDisparado(id, fecha, proxima)
+      },
+      async marcarFallido(id, ahora, agendadoPara) {
+        if (id === 's1') throw new Error('base caída')
+        return base.marcarFallido(id, ahora, agendadoPara)
+      },
+    }
+    const inbound = createFakeInboundMessagesRepo([
+      unMensaje({ id: 'm1', nextAttemptAt: '2026-07-29T11:00:00.000Z' }),
+    ])
+    const { server } = armar({ schedulesRepo, inbound })
+
+    const res = await tick(server)
+
+    expect(res.status).toBe(500)
+    expect(await res.json()).toMatchObject({
+      errores: 1,
+      disparados: 1,
+      entregados: 1,
+    })
+    expect((await inbound.findById('m1'))?.deliveryStatus).toBe('delivered')
+  })
 })
 
 describe('POST /internal/replay/:messageId', () => {
