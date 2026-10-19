@@ -891,7 +891,7 @@ Invertí el default a `opciones?.vistaPrevia !== false`. Los tests de `sin opcio
 
 - [ ] **Step 1: Escribir los tests que fallan**
 
-- `'\u001b]0;x\u0007'`, `'\u001b[2J'`, `'\u009b31m'`, `'‮'` y `'\u007f'`: el resultado no tiene ningún carácter de los rangos.
+- `'\u001b]0;x\u0007'`, `'\u001b[2J'`, `'\u009b31m'`, `'\u202e'` y `'\u007f'`: el resultado no tiene ningún carácter de los rangos.
 - `neutralizarControles('\u001b[2J')` → `'\\u{1b}[2J'`.
 - `'línea\nnueva'` → `'línea\\u{a}nueva'`.
 - `'ñandú 👨‍👩‍👧 ok'` → igual a la entrada.
