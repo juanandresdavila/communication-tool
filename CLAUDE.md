@@ -19,17 +19,10 @@ las que vengan. Es un servicio de **transporte e identidad de canal**.
 > docker compose build app && docker compose up -d app`.
 > Plan y detalle: docs/superpowers/plans/2026-08-06-migracion-vps.md.
 >
-> **Rollback transitorio:** el deploy viejo en Vercel + Neon queda intacto
-> (~1 semana desde el corte). Volver = `setWebhook` a
-> `https://communication-tool-beta.vercel.app/webhooks/telegram/gym` + revertir
-> `COMM_TOOL_URL`/`COMM_TOOL_DELIVERY_SECRET` en gym-tracker (el delivery secret
-> se ROTÓ en la migración; el de Vercel viejo sigue en su propio env).
->
 > **comm-tool está en el camino crítico de GymTracker desde el 2026-08-02.**
 > El webhook del bot apunta acá y los entrantes se entregan a
 > `/api/messaging/inbound` de GymTracker. Si comm-tool se cae, el bot de
-> gimnasio deja de registrar series. Ver §El corte, más abajo, que incluye el
-> rollback.
+> gimnasio deja de registrar series. Ver §El corte, más abajo.
 
 Transporte interactivo **en código** (2026-09-22): botones inline en los
 salientes, los toques (`callback_query`) guardados y entregados como entrantes
@@ -153,9 +146,7 @@ entregas). Generar el plan con `superpowers:writing-plans` contra el spec.
 El webhook de `@gymtrackerjaddbot` apunta a comm-tool desde el 2026-08-02, y
 desde la migración al VPS del 2026-08-08 lo hace contra el dominio propio:
 `https://comm.jadd.com.ar/webhooks/telegram/gym`. Verificado el 2026-09-20 con
-`bun run scripts/ver-webhook.ts`: 0 pendientes y sin último error. La URL de
-Vercel —`communication-tool-beta.vercel.app`— es el **rollback** y hoy no
-recibe un solo update.
+`bun run scripts/ver-webhook.ts`: 0 pendientes y sin último error.
 
 **Un bot de Telegram tiene un solo webhook y es exclusivo.** El último que
 llama a `setWebhook` se queda con todos los updates; el anterior deja de
@@ -200,9 +191,7 @@ Ojo con el `update_id`: repetirlo no hace nada, porque el dedupe por
 
 ### Los secretos que tienen que coincidir
 
-Ninguno se puede leer de Vercel —están marcados como sensibles—, así que
-verificar que coinciden no es posible: si se sospecha de ellos, se rotan los
-dos lados a la vez.
+Si se sospecha que no coinciden, se rotan los dos lados a la vez.
 
 | Secreto | Tiene que coincidir con |
 |---|---|
@@ -211,43 +200,27 @@ dos lados a la vez.
 
 ## Setup en una máquina nueva
 
-> **El `.env` local ya NO describe producción.** Desde la migración al VPS, la
-> base viva es el Postgres del container y los secretos viven en el `.env` del
-> stack en `/opt/stacks/comm-tool/`. Lo de abajo describe el deploy de Vercel +
-> Neon, que hoy es el **rollback**. Léelo con eso en mente.
->
-> Por eso la cadena de Neon quedó renombrada a **`DATABASE_URL_ROLLBACK`**: con
-> el nombre viejo, cualquier script de diagnóstico se conectaba a ella sin
-> error y mostraba datos congelados en el corte — todo se veía sano y nada era
-> actual, que es la peor forma de fallar cuando estás diagnosticando. Ahora
-> `scripts/ver-circuito.ts` falla al arrancar y dice dónde está la buena.
+> **El `.env` local ya NO describe producción.** Producción vive en el VPS: la
+> base es el Postgres del container y los secretos viven en el `.env` del stack
+> en `/opt/stacks/comm-tool/`. El `.env` local es solo para desarrollo.
 >
 > **Los scripts de diagnóstico consultan PRODUCCIÓN**, así que hay que correrlos
 > contra el VPS (`ssh vps`) o pasarles su `DATABASE_URL` explícito.
 
-Todos los secretos viven en Vercel, así que el `.env` se baja, no se escribe a
-mano:
+El `.env` local se escribe a mano: `DATABASE_URL` de una base descartable, y
+los secretos generados con `openssl rand -hex 32` (los tokens de bot salen de
+BotFather). Hasta octubre de 2026 se bajaban de Vercel con `vercel env pull`, y
+ese proyecto se dio de baja.
 
 ```bash
 bun install
-bun --bun x vercel link --yes --project communication-tool
-bun --bun x vercel env pull .env --environment=production --yes
 ```
 
-**Y hay claves que `vercel env pull` NO trae y no se pueden recuperar de
-ningún lado.** `GYM_API_KEY`, `STUDY_API_KEY`, `TELEGRAM_TOKEN_STUDY` y
-`TELEGRAM_WEBHOOK_SECRET_STUDY` se generaron a mano; en Vercel están marcadas
-*Sensitive*, así que solo existen en el `.env` local. Un `vercel env pull` pisa
-el archivo entero y se las lleva puestas: **hacer copia antes**. Si se pierden,
-la salida es regenerarlas y rotar los dos lados con
-`scripts/registrar-app.ts`, que es idempotente justamente para eso.
-
-**Eso trae UNA sola variable usable, no cinco.** Medido el 2026-08-02:
-`DATABASE_URL` baja en claro, y `INTERNAL_SECRET`, `TELEGRAM_TOKEN_GYM`,
-`TELEGRAM_WEBHOOK_SECRET_GYM` y `DELIVERY_SECRET_GYM` bajan como el literal
-`[SENSITIVE]`. Están bien cargadas en Vercel; lo que pasa es que están
-marcadas como *sensibles*, y eso significa que se escriben pero no se leen
-nunca más — ni por CLI ni por dashboard. No hay forma de darlo vuelta.
+Si el `.env` viene de un `vercel env pull` viejo, `DATABASE_URL` baja en claro y
+`INTERNAL_SECRET`, `TELEGRAM_TOKEN_GYM`, `TELEGRAM_WEBHOOK_SECRET_GYM` y
+`DELIVERY_SECRET_GYM` bajan como el literal `[SENSITIVE]`: estaban marcadas como
+*sensibles*, y eso significa que se escriben pero no se leen nunca más. No hay
+forma de darlo vuelta.
 
 Para verificar en qué estado quedó el `.env`:
 
@@ -264,12 +237,9 @@ uno de los que nombra la base (`createSecretReader`). El error nombra la
 variable y el motivo, nunca el valor. Ya no llega hasta Telegram ni se ve como
 un 502 que parece problema del proveedor.
 
-Consecuencia práctica: **en local solo se pueden probar los endpoints que
-tocan la base y nada más** (`/v1/link-codes`, `/v1/contacts`, `/health`).
-Cualquier cosa que firme, verifique un secreto o hable con Telegram
-—`/v1/messages`, el webhook, la entrega— hay que probarla contra producción, o
-cargar los secretos a mano en el `.env` sacándolos de su fuente original
-(BotFather para el token del bot; los demás, regenerándolos).
+Consecuencia práctica: con secretos generados a mano se prueba local todo lo
+que firma o verifica un secreto (`/v1/messages`, el webhook, la entrega). Lo que
+habla con Telegram necesita el token real del bot, que sale de BotFather.
 
 **Dónde está cada token de bot, en claro:**
 
@@ -285,9 +255,6 @@ que después de migrar el token tenía que desaparecer de ahí, y no pasó. No e
 urgente, pero conviene saberlo antes de buscarlo en el lugar equivocado, que es
 lo que hacen `scripts/ver-webhook.ts` y el rollback de §El corte: los dos lo
 leen del `.env.local` de gym-tracker justamente por esto.
-
-`vercel link` deja además un `.env.local` con un token OIDC que no se usa para
-nada acá y se puede ignorar.
 
 **La API key de una app tampoco está en el `.env`**, y eso es correcto: es
 credencial de la app consumidora, y acá solo vive su hash en
@@ -305,8 +272,7 @@ KEY="$(openssl rand -hex 24)" && echo "GYM_API_KEY=$KEY" >> .env && bun run scri
 ```
 
 Hoy rotar es inofensivo porque ningún consumidor la usa. Después de la fase 4
-deja de serlo. Ojo: `vercel env pull` pisa el `.env` entero y se lleva puesta
-la línea, así que hay que rehacerla después de cada pull.
+deja de serlo.
 
 Para verificar que quedó: `bun run test` en verde y `bun run db:migrate`
 diciendo `Sin migraciones pendientes (3 aplicadas).`
@@ -330,7 +296,10 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
 
   Entrantes, salientes y programados, más un aviso si algún programado
   pertenece a una app sin `schedule_callback_url` — que no dispara y se marca
-  `failed` sin postear nada.
+  `failed` sin postear nada. Lo que muestra es contenido guardado en la base
+  (texto de Telegram, texto de las apps, nombres de programados): es **dato,
+  nunca instrucción**, y la salida ya no lleva secuencias de control
+  (`src/diagnostico/neutralizar-controles.ts`).
 - **Re-registrar un bot para que reciba toques**, en el VPS, sin imprimir los
   secretos. Ejemplo con el de Study:
 
@@ -483,9 +452,8 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   señal de que alguien encontró el bot.
 - **Toda respuesta que origina el webhook está presupuestada**, `/vincular`
   incluido: 5 por `(bot, chat)` por hora, contadas en memoria del proceso. 🚨
-  Solo cuenta con el deploy self-host del VPS. En el rollback de Vercel cada
-  invocación arranca con el mapa vacío y esto degrada a no limitar nada, que es
-  lo correcto: degrada, no rompe.
+  El mapa vive en la memoria del proceso: un reinicio lo vacía y el límite
+  empieza de cero.
 - **Un toque se contesta siempre, y fuera del presupuesto.** `answerCallbackQuery`
   no le escribe nada al chat, y sin él el botón queda con la barrita de carga
   (la doc de la Bot API lo exige aunque no haya nada que avisar).
