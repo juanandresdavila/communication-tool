@@ -30,6 +30,9 @@ export function createDeliveryClient(fetchImpl: Fetch = fetch): DeliveryClient {
             'X-Comm-Delivery-Id': pedido.deliveryId,
           },
           body: pedido.cuerpo,
+          // Un 3xx es una entrega fallida: seguirlo reenviaría el POST firmado
+          // a un destino que la app registrada no eligió.
+          redirect: 'manual',
           signal: AbortSignal.timeout(pedido.timeoutMs),
         })
 
