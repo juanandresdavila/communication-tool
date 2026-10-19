@@ -4,6 +4,7 @@ import {
   createFakeSchedulesRepo,
   unSchedule,
 } from '../test-support/fake-schedules.js'
+import type { SecretReader } from '../secrets.js'
 import { createFakeAppsRepo, unApp } from '../test-support/fake-repos.js'
 import { dispararProgramado, GRACIA_MS } from './fire.js'
 
@@ -12,7 +13,11 @@ const AGENDADO = '2026-08-03T01:00:00.000Z'
 const CALLBACK = 'https://gym.example/api/messaging/schedule'
 
 function armar(
-  opts: { respuesta?: EntregaResultado; callbackUrl?: string | null } = {},
+  opts: {
+    respuesta?: EntregaResultado
+    callbackUrl?: string | null
+    secretos?: SecretReader
+  } = {},
 ) {
   const pedidos: { url: string; cuerpo: string; deliveryId: string }[] = []
 
@@ -42,7 +47,7 @@ function armar(
           return opts.respuesta ?? { ok: true, status: 200 }
         },
       },
-      secrets: () => 'secreto',
+      secrets: opts.secretos ?? (() => 'secreto'),
       now: () => AHORA,
     },
   }
@@ -96,6 +101,24 @@ describe('dispararProgramado', () => {
     )
 
     const tras = await schedules.claimVencidos(AHORA, 10)
+    expect(tras[0]?.agendadoPara).toBe(AGENDADO)
+    expect(tras[0]?.schedule.lastStatus).toBe('failed')
+  })
+
+  it('un secreto ilegible marca fallido y restaura la hora', async () => {
+    const { deps, pedidos, schedules } = armar({
+      secretos: () => {
+        throw new Error(
+          'Falta la variable de entorno DELIVERY_SECRET_GYM, referenciada desde la base',
+        )
+      },
+    })
+    expect(await dispararProgramado(deps, unSchedule(), AGENDADO)).toBe(
+      'failed',
+    )
+    expect(pedidos).toEqual([])
+
+    const tras = await schedules.claimVencidos(AHORA, 25)
     expect(tras[0]?.agendadoPara).toBe(AGENDADO)
     expect(tras[0]?.schedule.lastStatus).toBe('failed')
   })

@@ -421,6 +421,12 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   Un `pending` con `next_attempt_at` ya vencido y que no se mueve significa
   que el ticker no está corriendo. Un `failed` se reprocesa con
   `POST /internal/replay/:messageId`.
+  Un entrante cuya app no tiene su secreto de entrega cargado (la variable
+  falta o no sirve) **cuenta intentos** como cualquier fallo de entrega: en
+  alrededor de una hora queda `failed`. Una vez cargada la variable se
+  reencola con `/internal/replay/:messageId`. El tick aísla cada ítem: si
+  uno tira, procesa el resto y contesta **500** con el JSON de siempre más
+  `errores` (cuántos tiraron), así el ticker externo lo registra como falla.
 - **El servidor MCP vive en `POST /mcp`** y expone dos tools de salida,
   `enviar_mensaje` y `ver_contacto`. Se autentica con la misma API key que
   `/v1`. Habla las dos eras del protocolo: la revisión 2026-07-28, con

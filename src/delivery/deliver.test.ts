@@ -6,6 +6,7 @@ import {
   unApp,
   unMensaje,
 } from '../test-support/fake-repos.js'
+import type { SecretReader } from '../secrets.js'
 import type { DeliveryClient, EntregaResultado } from './client.js'
 import { entregarConReintentoInmediato, intentarEntrega } from './deliver.js'
 
@@ -15,6 +16,7 @@ function armar(opts: {
   respuestas?: EntregaResultado[]
   mensajes?: ReturnType<typeof unMensaje>[]
   app?: App
+  secretos?: SecretReader
 }) {
   const respuestas = [...(opts.respuestas ?? [{ ok: true, status: 200 }])]
   const pedidos: { url: string; cuerpo: string; firma: string }[] = []
@@ -41,7 +43,7 @@ function armar(opts: {
       inbound: mensajes,
       apps: createFakeAppsRepo([{ hash: 'h', app }]),
       delivery: telegram,
-      secrets: () => 'secreto-de-entrega',
+      secrets: opts.secretos ?? (() => 'secreto-de-entrega'),
       now: () => AHORA,
       sleep: async (ms: number) => {
         esperas.push(ms)
@@ -50,7 +52,39 @@ function armar(opts: {
   }
 }
 
+const SIN_SECRETO: SecretReader = () => {
+  throw new Error(
+    'Falta la variable de entorno DELIVERY_SECRET_GYM, referenciada desde la base',
+  )
+}
+
 describe('intentarEntrega', () => {
+  it('un secreto de entrega ilegible es un intento fallido', async () => {
+    const mensaje = unMensaje({ id: 'm1' })
+    const { deps, pedidos, mensajes } = armar({
+      mensajes: [mensaje],
+      secretos: SIN_SECRETO,
+    })
+
+    expect(await intentarEntrega(deps, mensaje)).toBe('pending')
+    expect(pedidos).toEqual([])
+
+    const tras = await mensajes.findById('m1')
+    expect(tras?.deliveryAttempts).toBe(1)
+    expect(tras?.lastError).toMatch(/DELIVERY_SECRET_GYM/)
+  })
+
+  it('un secreto ilegible en el último intento deja el mensaje fallido', async () => {
+    const mensaje = unMensaje({ id: 'm1', deliveryAttempts: 4 })
+    const { deps, pedidos } = armar({
+      mensajes: [mensaje],
+      secretos: SIN_SECRETO,
+    })
+
+    expect(await intentarEntrega(deps, mensaje)).toBe('failed')
+    expect(pedidos).toEqual([])
+  })
+
   it('un toque se entrega con callback y texto vacío', async () => {
     const toque = unMensaje({
       text: '',
