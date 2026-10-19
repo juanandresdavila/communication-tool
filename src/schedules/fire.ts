@@ -33,9 +33,12 @@ export async function dispararProgramado(
 
   const proxima = proximaEjecucion(schedule.cron, schedule.timezone, ahora)
   if (!proxima) {
-    // La expresión dejó de ser válida. Se marca fallido y se restaura el
-    // horario: queda visible en `last_status` en vez de desaparecer.
-    await deps.schedules.marcarFallido(schedule.id, ahora, agendado)
+    // Sin próxima ejecución (expresión inválida o un patrón que ya no ocurre)
+    // el estado es terminal: reintentar no la hace aparecer. Restaurar el
+    // horario, como en un fallo de entrega, la devolvería al claim en cada
+    // tick hasta que la ventana de gracia la diera por perdida. Queda
+    // inactivo y visible en `last_status`.
+    await deps.schedules.marcarSinProxima(schedule.id, ahora)
     return 'failed'
   }
 

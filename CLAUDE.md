@@ -62,6 +62,10 @@ Dos detalles que se pagan caro si se invierten:
   recalcularía la ventana de gracia contra él y el programado se reintentaría
   para siempre. La ventana es de **una hora**: con el ticker cada 15 minutos da
   ~4 reintentos y después marca `missed`.
+- **Un programado sin próxima ejecución queda terminal** (`active = false`,
+  `last_status = 'failed'`, `next_run_at` nulo), no vuelve al claim. Y el
+  registro rechaza los crons de un solo disparo (una fecha ISO, o siete campos
+  con año): `cronValido` exige dos próximas ejecuciones.
 - **El `deliveryId` del callback es `<scheduleId>:<horarioAgendado>`.** Con un
   uuid nuevo por intento, un reintento mandaría el aviso dos veces.
 

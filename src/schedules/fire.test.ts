@@ -124,10 +124,26 @@ describe('dispararProgramado', () => {
     expect(pedidos).toEqual([])
   })
 
-  it('marca fallido si la expresión cron dejó de ser válida', async () => {
-    const { deps, pedidos } = armar()
+  it('deja terminal un programado sin próxima ejecución', async () => {
+    const { deps, pedidos, schedules } = armar()
     const roto = unSchedule({ cron: 'esto no es cron' })
     expect(await dispararProgramado(deps, roto, AGENDADO)).toBe('failed')
     expect(pedidos).toEqual([])
+
+    // Terminal: no vuelve al claim con su hora, que era lo que pasaba antes.
+    expect(
+      await schedules.claimVencidos(new Date('2100-01-01T00:00:00.000Z'), 25),
+    ).toEqual([])
+  })
+
+  it('deja terminal un cron de un solo disparo ya pasado', async () => {
+    const { deps, pedidos, schedules } = armar()
+    const unico = unSchedule({ cron: '2026-08-01T00:00:00' })
+    expect(await dispararProgramado(deps, unico, AGENDADO)).toBe('failed')
+    expect(pedidos).toEqual([])
+
+    expect(
+      await schedules.claimVencidos(new Date('2100-01-01T00:00:00.000Z'), 25),
+    ).toEqual([])
   })
 })

@@ -261,13 +261,20 @@ export interface SchedulesRepo {
 
   marcarDisparado(id: string, ahora: Date, proxima: Date): Promise<void>
   /**
-   * Devuelve `next_run_at` al horario original para que el tick siguiente
+   * Fallo REINTENTABLE (la app no contestó, no tiene callback). Devuelve
+   * `next_run_at` al horario original para que el tick siguiente
    * reintente. **No alcanza con dejarlo quieto**: el claim lo pisó con el
    * lease, y si se dejara así cada reintento recalcularía la ventana de gracia
    * contra el lease en vez del horario agendado, y el programado se
    * reintentaría para siempre.
    */
   marcarFallido(id: string, ahora: Date, agendadoPara: Date): Promise<void>
+  /**
+   * Fallo TERMINAL: no hay próxima ejecución que calcular. Deja `active =
+   * false`, `next_run_at` nulo y `last_status = 'failed'`; el `upsert` la
+   * reactiva si la app la registra de nuevo.
+   */
+  marcarSinProxima(id: string, ahora: Date): Promise<void>
   /** Se pasó la ventana de gracia: salta a la próxima ocurrencia. */
   marcarPerdido(id: string, ahora: Date, proxima: Date): Promise<void>
 }

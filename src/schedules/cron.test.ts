@@ -60,6 +60,19 @@ describe('cronValido', () => {
     expect(cronValido('esto no es cron')).toBe(false)
     expect(cronValido('99 99 * * *')).toBe(false)
   })
+
+  it('rechaza los patrones de un solo disparo', () => {
+    // Una fecha ISO y un patrón de siete campos con año tienen una sola
+    // ocurrencia: después de ella el programado quedaría sin próxima.
+    expect(cronValido('2099-01-01T00:00:00')).toBe(false)
+    expect(cronValido('0 0 0 1 1 * 2099')).toBe(false)
+  })
+
+  it('acepta un patrón recurrente aunque sea raro', () => {
+    expect(cronValido('0 9 * * *')).toBe(true)
+    // El 29 de febrero ocurre cada cuatro años: tiene próximas de sobra.
+    expect(cronValido('0 0 29 2 *')).toBe(true)
+  })
 })
 
 describe('zonaValida', () => {
