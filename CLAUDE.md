@@ -248,15 +248,17 @@ nunca más — ni por CLI ni por dashboard. No hay forma de darlo vuelta.
 Para verificar en qué estado quedó el `.env`:
 
 ```bash
-grep -c '=\[SENSITIVE\]' .env
+grep -cE '^[A-Z0-9_]+="?\[SENSITIVE\]"?$' .env
 ```
 
 Cualquier resultado distinto de `0` quiere decir que esas variables no sirven.
 
-**Falla de la peor manera posible.** `createSecretReader` solo tira error con
-valor vacío o ausente, y `[SENSITIVE]` es una cadena no vacía: pasa de largo,
-llega hasta Telegram, y Telegram rechaza. El síntoma es un **502 que parece
-problema del proveedor** cuando en realidad es de configuración local.
+**Falla temprano y con nombre.** Un valor así (el marcador `[SENSITIVE]`,
+comillas o corchetes en los bordes, espacios, o menos de 32 caracteres) falla
+**al arrancar** si es `INTERNAL_SECRET` (`parseEnv`) o **en la lectura** si es
+uno de los que nombra la base (`createSecretReader`). El error nombra la
+variable y el motivo, nunca el valor. Ya no llega hasta Telegram ni se ve como
+un 502 que parece problema del proveedor.
 
 Consecuencia práctica: **en local solo se pueden probar los endpoints que
 tocan la base y nada más** (`/v1/link-codes`, `/v1/contacts`, `/health`).
@@ -396,8 +398,9 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   **Ojo con `setWebhook` sobre un bot que ya está en uso**: es exclusivo y le
   saca los updates a quien los tenía. Sobre un bot recién creado es inofensivo.
 - **`INTERNAL_SECRET` tiene que estar en Production *y* en Preview.** `parseEnv`
-  la exige, y corre al importar el módulo: si falta en Preview, el build pasa
-  igual y el deploy revienta con 500 en el primer request. Hoy las dos
+  la exige (al menos 32 caracteres, generada con `openssl rand -hex 32`), y
+  corre al importar el módulo: si falta en Preview, el build pasa igual y el
+  deploy revienta con 500 en el primer request. Hoy las dos
   comparten valor.
 - **El header del ticker es `Authorization: Bearer <secreto>`**, no un header
   llamado `Bearer`. Con el nombre mal el servicio no encuentra el header y

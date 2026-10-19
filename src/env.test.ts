@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { parseDatabaseEnv, parseEnv } from './env.js'
 
+const BUENO = 'a1'.repeat(32)
+const FILTRABLE = 'zqx'.repeat(4)
+
 describe('parseEnv', () => {
   it('devuelve la config cuando están todas las variables', () => {
     expect(
-      parseEnv({ DATABASE_URL: 'postgres://x', INTERNAL_SECRET: 's' }),
+      parseEnv({ DATABASE_URL: 'postgres://x', INTERNAL_SECRET: BUENO }),
     ).toEqual({
       DATABASE_URL: 'postgres://x',
-      INTERNAL_SECRET: 's',
+      INTERNAL_SECRET: BUENO,
     })
   })
 
@@ -17,7 +20,7 @@ describe('parseEnv', () => {
 
   it('falla si DATABASE_URL está vacía', () => {
     expect(() =>
-      parseEnv({ DATABASE_URL: '', INTERNAL_SECRET: 's' }),
+      parseEnv({ DATABASE_URL: '', INTERNAL_SECRET: BUENO }),
     ).toThrow(/DATABASE_URL/)
   })
 
@@ -27,14 +30,34 @@ describe('parseEnv', () => {
     )
   })
 
+  it.each(['[SENSITIVE]', '"[SENSITIVE]"', 's', 'a'.repeat(31)])(
+    'parseEnv rechaza INTERNAL_SECRET=%j',
+    (valor) => {
+      expect(() =>
+        parseEnv({ DATABASE_URL: 'postgres://x', INTERNAL_SECRET: valor }),
+      ).toThrow(/INTERNAL_SECRET/)
+    },
+  )
+
+  it('el mensaje de un INTERNAL_SECRET inválido no contiene el valor', () => {
+    let mensaje = ''
+    try {
+      parseEnv({ DATABASE_URL: 'postgres://x', INTERNAL_SECRET: FILTRABLE })
+    } catch (e) {
+      mensaje = (e as Error).message
+    }
+    expect(mensaje).toMatch(/INTERNAL_SECRET/)
+    expect(mensaje).not.toContain('zqx')
+  })
+
   it('ignora variables desconocidas', () => {
     expect(
       parseEnv({
         DATABASE_URL: 'postgres://x',
-        INTERNAL_SECRET: 's',
+        INTERNAL_SECRET: BUENO,
         OTRA: 'y',
       }),
-    ).toEqual({ DATABASE_URL: 'postgres://x', INTERNAL_SECRET: 's' })
+    ).toEqual({ DATABASE_URL: 'postgres://x', INTERNAL_SECRET: BUENO })
   })
 })
 
