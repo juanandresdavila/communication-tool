@@ -6,6 +6,7 @@ import {
   parseCommand,
   parseTelegramUpdate,
 } from '../channels/telegram/parse-update.js'
+import { sanearJson } from '../channels/telegram/sanear-json.js'
 import type { Comando, UpdateDeToque } from '../channels/telegram/types.js'
 import type {
   Bot,
@@ -74,7 +75,11 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
       return c.json({ code: 'unauthorized' }, 401)
     }
 
-    const crudo: unknown = await c.req.json().catch(() => null)
+    // Se sanea ANTES de todo lo demás: un U+0000 o un surrogate suelto en
+    // cualquier campo (texto, `data`, un nombre del `raw`) hace que Postgres
+    // rechace el INSERT, el webhook dé 500 y Telegram reintente el mismo
+    // update para siempre.
+    const crudo: unknown = sanearJson(await c.req.json().catch(() => null))
     const update = parseTelegramUpdate(crudo)
     // Un update que no sabemos leer (edición, encuesta) se acepta y se
     // descarta: devolverle un error a Telegram provocaría reintentos eternos

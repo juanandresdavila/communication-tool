@@ -57,7 +57,16 @@ function armar(
   const entregados: string[] = []
   const contacts = createFakeContactsRepo(opts.contactos ?? [])
   const linkCodes = createFakeLinkCodesRepo(opts.codigos ?? [])
-  const inboundBase = createFakeInboundMessagesRepo([])
+  const inboundFalso = createFakeInboundMessagesRepo([])
+  // Guarda lo que el webhook le pasa a insertIfNew, tal cual lo recibe.
+  const insertados: Parameters<InboundMessagesRepo['insertIfNew']>[0][] = []
+  const inboundBase: InboundMessagesRepo = {
+    ...inboundFalso,
+    async insertIfNew(input) {
+      insertados.push(input)
+      return inboundFalso.insertIfNew(input)
+    },
+  }
   const inbound: InboundMessagesRepo = opts.marcarEntregadoFalla
     ? {
         ...inboundBase,
@@ -135,6 +144,8 @@ function armar(
     contacts,
     linkCodes,
     inbound,
+    /** Lo que recibió insertIfNew, en orden. */
+    insertados,
     /** Espera a que termine lo que quedó en waitUntil. */
     async drenar() {
       await Promise.all(pendientes)
@@ -680,5 +691,67 @@ describe('/start con código', () => {
 
     expect(enviados).toEqual([])
     expect(entregados).toHaveLength(1)
+  })
+})
+
+/** true si algún string o clave, recorrido entero, trae U+0000 o un surrogate suelto. */
+function tieneSucio(v: unknown): boolean {
+  const sucio = (s: string) => s.includes('\u0000') || !s.isWellFormed()
+  if (typeof v === 'string') return sucio(v)
+  if (Array.isArray(v)) return v.some(tieneSucio)
+  if (v !== null && typeof v === 'object') {
+    return Object.entries(v).some(([k, x]) => sucio(k) || tieneSucio(x))
+  }
+  return false
+}
+
+describe('U+0000 y surrogates sueltos que manda Telegram', () => {
+  // postear() usa JSON.stringify, que escribe el U+0000 como escape; al
+  // parsear, c.req.json() lo devuelve como carácter real: igual que en producción.
+
+  it('un mensaje de un chat no vinculado llega limpio a insertIfNew', async () => {
+    const { server, insertados } = armar()
+
+    const res = await postear(server, update('ho\u0000la'))
+
+    expect(res.status).toBe(200)
+    expect(insertados).toHaveLength(1)
+    expect(tieneSucio(insertados[0])).toBe(false)
+    expect(insertados[0]?.text).toBe('ho\uFFFDla')
+  })
+
+  it('un toque de un chat vinculado llega limpio (callbackData y raw)', async () => {
+    const { server, insertados } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+    })
+
+    const res = await postear(server, toque('x\u0000y'))
+
+    expect(res.status).toBe(200)
+    expect(insertados).toHaveLength(1)
+    expect(tieneSucio(insertados[0])).toBe(false)
+    expect(insertados[0]?.callbackData).toBe('x\uFFFDy')
+    expect(insertados[0]?.raw).not.toBeNull()
+  })
+
+  it('el U+0000 que solo viaja en el raw (from.first_name) también se limpia', async () => {
+    const { server, insertados } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+    })
+    const base = update('hola')
+    const cuerpo = {
+      ...base,
+      message: { ...base.message, from: { id: 12345, first_name: 'Ju\u0000an' } },
+    }
+
+    const res = await postear(server, cuerpo)
+
+    expect(res.status).toBe(200)
+    expect(insertados).toHaveLength(1)
+    expect(insertados[0]?.text).toBe('hola')
+    expect(tieneSucio(insertados[0]?.raw)).toBe(false)
+    expect(insertados[0]?.raw).toMatchObject({
+      message: { from: { first_name: 'Ju\uFFFDan' } },
+    })
   })
 })
