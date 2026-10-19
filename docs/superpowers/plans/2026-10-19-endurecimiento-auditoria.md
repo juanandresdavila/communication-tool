@@ -54,7 +54,7 @@ DATABASE_URL='' bun run test
 
 Esperado: `Test Files 33 passed | 4 skipped (37)` y `Tests 322 passed | 26 skipped (348)`.
 
-Con base: una base **descartable** con las 5 migraciones aplicadas. En la mini es el Postgres 18 de Docker; en la Air no hay Docker, y se usa el Postgres 17 de Homebrew (memoria `air-sin-docker-postgres-17-homebrew` de Juan). Producción es el 18: lo que dependa del 18 aparece recién en el VPS.
+Con base: una base **descartable** con las 5 migraciones aplicadas. Va un contenedor descartable de `postgres:18-alpine`, la versión de producción: en la mini con Docker y en la Air con colima (si `docker info` falla, `colima start`). Si no hay Docker, el Postgres 17 de Homebrew sirve, y lo que dependa del 18 queda sin verificar hasta el VPS.
 
 ```bash
 export DATABASE_URL='postgres://<usuario>:<clave>@127.0.0.1:<puerto>/commtool_test'
