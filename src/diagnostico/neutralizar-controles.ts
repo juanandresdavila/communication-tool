@@ -14,7 +14,7 @@
 // La regla `no-control-regex` está prendida en `js.configs.recommended`, y acá
 // los caracteres de control son justamente lo que se busca.
 // eslint-disable-next-line no-control-regex
-const CONTROLES = /[\u0000-\u001f\u007f-\u009f؜‎‏‪-‮⁦-⁩]/g
+const CONTROLES = /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
 
 export function neutralizarControles(texto: string): string {
   return texto.replace(
