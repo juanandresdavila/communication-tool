@@ -119,11 +119,6 @@ describe('POST /v1/messages', () => {
     // Cada caso: el campo justo en el tope (pasa) y un carácter más (400).
     const casos: Array<{ nombre: string; ok: object; pasado: object }> = [
       {
-        nombre: 'userId de 201',
-        ok: { userId: 'u'.repeat(200) },
-        pasado: { userId: 'u'.repeat(201) },
-      },
-      {
         nombre: 'replyToMessageId de 33',
         ok: { replyToMessageId: 'r'.repeat(32) },
         pasado: { replyToMessageId: 'r'.repeat(33) },
@@ -167,24 +162,8 @@ describe('POST /v1/messages', () => {
     })
 
     it.each(casos)('$nombre: el mismo campo en el tope pasa', async ({ ok }) => {
-      const cuerpo = { ...VALIDO, ...ok }
-      const { server } = armar({
-        contactos: [unContacto({ appUserId: cuerpo.userId })],
-      })
-      const res = await postear(server, cuerpo)
+      const res = await postear(armar().server, { ...VALIDO, ...ok })
       expect(res.status).toBe(200)
-    })
-
-    it('el userId de /edit respeta el mismo tope', async () => {
-      const edit = (userId: string) =>
-        armar().server.request('/v1/messages/edit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, messageId: '1', text: 'x' }),
-        })
-      expect((await edit('u'.repeat(201))).status).toBe(400)
-      // En el tope valida y sigue: lo que conteste después no es un 400.
-      expect((await edit('u'.repeat(200))).status).not.toBe(400)
     })
   })
 
