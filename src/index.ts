@@ -7,7 +7,8 @@ import { wireApp } from './wire.js'
 
 // waitUntil se inyecta en vez de importarse donde se usa: es lo único
 // atado a Vercel en todo el servicio. El entrypoint self-host (server.ts)
-// lo reemplaza por `(p) => { void p }` sin tocar una línea de dominio.
+// lo reemplaza por el adaptador de wait-until-self-host.ts (que loguea los
+// rechazos en vez de dejarlos sueltos) sin tocar una línea de dominio.
 const wired = wireApp((promesa) => {
   waitUntil(promesa)
 })

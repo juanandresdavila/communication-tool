@@ -1,11 +1,13 @@
+import { crearWaitUntilSelfHost } from './wait-until-self-host.js'
 import { wireApp } from './wire.js'
 
 // Self-host: el proceso vive, no hay runtime que corte la request al
-// responder — un fire-and-forget alcanza. Es el reemplazo documentado del
-// waitUntil de Vercel (ver el comentario en wire.ts / index.ts).
-const { app, sql } = wireApp((promesa) => {
-  void promesa
-})
+// responder, un fire-and-forget alcanza. Es el reemplazo documentado del
+// waitUntil de Vercel (ver el comentario en wire.ts / index.ts). El adaptador
+// agrega una red: loguea lo que rechace en vez de dejarlo como rejection suelta.
+const { app, sql } = wireApp(
+  crearWaitUntilSelfHost((mensaje) => console.error(mensaje)),
+)
 
 const server = Bun.serve({
   port: Number(process.env.PORT ?? 3000),

@@ -1,6 +1,11 @@
 import { Hono } from 'hono'
-import { describe, expect, it } from 'vitest'
-import type { Contact, LinkCode } from '../db/ports.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  AppsRepo,
+  Contact,
+  InboundMessagesRepo,
+  LinkCode,
+} from '../db/ports.js'
 import {
   createFakeAppsRepo,
   createFakeBotsRepo,
@@ -23,6 +28,15 @@ import { telegramWebhookRoutes } from './telegram-webhook.js'
 const SECRETO = 'secreto-del-webhook'
 const AHORA = new Date('2026-07-28T12:00:00.000Z')
 
+// El .catch de la entrega loguea con console.error: se silencia y se espía.
+let errorLog: ReturnType<typeof vi.spyOn>
+beforeEach(() => {
+  errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+})
+afterEach(() => {
+  errorLog.mockRestore()
+})
+
 function armar(
   opts: {
     contactos?: Contact[]
@@ -31,6 +45,10 @@ function armar(
     envioFalla?: boolean
     envioColgado?: boolean
     respuestaFalla?: boolean
+    /** El repo de apps rechaza: la entrega tira antes de llegar a la app. */
+    appsFalla?: boolean
+    /** El repo de entrantes rechaza al marcar entregado (la entrega ya salió). */
+    marcarEntregadoFalla?: boolean
     presupuesto?: PresupuestoDeRespuestas
   } = {},
 ) {
@@ -39,7 +57,24 @@ function armar(
   const entregados: string[] = []
   const contacts = createFakeContactsRepo(opts.contactos ?? [])
   const linkCodes = createFakeLinkCodesRepo(opts.codigos ?? [])
-  const inbound = createFakeInboundMessagesRepo([])
+  const inboundBase = createFakeInboundMessagesRepo([])
+  const inbound: InboundMessagesRepo = opts.marcarEntregadoFalla
+    ? {
+        ...inboundBase,
+        async marcarEntregado() {
+          throw new Error('base caída al marcar entregado')
+        },
+      }
+    : inboundBase
+  const appsBase = createFakeAppsRepo([{ hash: 'h', app: unApp() }])
+  const apps: AppsRepo = opts.appsFalla
+    ? {
+        ...appsBase,
+        async findById() {
+          throw new Error('base caída')
+        },
+      }
+    : appsBase
 
   // waitUntil ejecuta al toque en los tests: la entrega tiene que haber
   // terminado cuando el request vuelve, o las aserciones correrían antes.
@@ -55,7 +90,7 @@ function armar(
       inbound,
       presupuesto:
         opts.presupuesto ?? crearPresupuesto(PRESUPUESTO_POR_DEFECTO),
-      apps: createFakeAppsRepo([{ hash: 'h', app: unApp() }]),
+      apps,
       delivery: {
         async entregar(p) {
           entregados.push(p.deliveryId)
@@ -193,10 +228,10 @@ describe('chat no vinculado', () => {
   })
 
   it('la promesa que se programa resuelve aunque el envío falle', async () => {
-    // 🚨 El motivo de este test: el waitUntil de server.ts es `void promesa`,
-    // que NO captura rejections, y sendMessage tira cuando Telegram rechaza.
-    // Sin el .catch del webhook, acá quedaría una unhandled rejection que en
-    // producción no la agarra nadie.
+    // 🚨 El motivo de este test: el .catch se pone en el sitio, que es quien
+    // sabe qué significa que falle esta promesa. server.ts tiene ahora una red
+    // en el adaptador (wait-until-self-host.ts), pero la regla se mantiene.
+    // sendMessage tira cuando Telegram rechaza.
     const { server, drenar } = armar({ envioFalla: true })
 
     await postear(server, update('hola'))
@@ -386,6 +421,48 @@ describe('persistencia y entrega', () => {
     const res = await postear(server, update('hola'))
     await drenar()
     expect(res.status).toBe(200)
+  })
+})
+
+describe('la entrega que tira no queda como rechazo suelto', () => {
+  // 🚨 Ninguno de estos casos usa un secreto faltante como disparador: desde
+  // que la lectura del secreto cuenta como intento fallido ya no tira, y el
+  // test pasaría aunque se sacara el .catch.
+  const VINCULADO = [unContacto({ externalId: '12345', appUserId: 'user-1' })]
+
+  it('si la entrega de un mensaje tira, contesta 200 y no deja rejections sueltas', async () => {
+    const { server, drenar } = armar({ contactos: VINCULADO, appsFalla: true })
+
+    const res = await postear(server, update('hola'))
+
+    expect(res.status).toBe(200)
+    await expect(drenar()).resolves.toBeUndefined()
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('msg-1'))
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('base caída'))
+  })
+
+  it('si la entrega de un toque tira, contesta 200 y no deja rejections sueltas', async () => {
+    const { server, drenar } = armar({ contactos: VINCULADO, appsFalla: true })
+
+    const res = await postear(server, toque())
+
+    expect(res.status).toBe(200)
+    await expect(drenar()).resolves.toBeUndefined()
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('msg-1'))
+  })
+
+  it('si falla marcar entregado, contesta 200 y no deja rejections sueltas', async () => {
+    const { server, entregados, drenar } = armar({
+      contactos: VINCULADO,
+      marcarEntregadoFalla: true,
+    })
+
+    const res = await postear(server, update('hola'))
+
+    expect(res.status).toBe(200)
+    await expect(drenar()).resolves.toBeUndefined()
+    expect(entregados).toEqual(['msg-1'])
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('msg-1'))
   })
 })
 

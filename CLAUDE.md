@@ -557,9 +557,12 @@ diciendo `Sin migraciones pendientes (3 aplicadas).`
   con su propio `.catch`. Dos razones, las dos medidas: esperar a
   api.telegram.org retiene un slot del pool de Telegram (`max_connections`, 40
   por defecto) y hace que los mensajes del usuario real hagan cola atrás de los
-  de un desconocido; y `sendMessage` **tira** cuando Telegram rechaza, mientras
-  que el `waitUntil` de `server.ts` es `void promesa`, que no captura
-  rejections. Sin el `.catch`, cada respuesta fallida deja una suelta.
+  de un desconocido; y `sendMessage` **tira** cuando Telegram rechaza. El
+  `waitUntil` de `server.ts` (`src/wait-until-self-host.ts`) tiene una red que
+  loguea lo que rechace, pero la regla se mantiene: el `.catch` va en el sitio,
+  porque quien origina el trabajo sabe qué significa que falle. Lo mismo vale
+  para las dos entregas del webhook, que loguean el id del entrante y dejan la
+  fila `pending` para el tick.
 - **El cliente de Telegram tiene timeout** (`TIMEOUT_TELEGRAM_MS`, 10 s), igual
   que el de entrega. Hasta el 20/09/2026 no lo tenía y un api.telegram.org
   colgado colgaba el request: el webhook retenía el slot y el saliente quedaba
