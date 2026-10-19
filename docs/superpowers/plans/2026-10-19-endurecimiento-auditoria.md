@@ -62,7 +62,7 @@ bun run db:migrate
 bun run test
 ```
 
-Esperado: 348 de 348, sin salteados. **Nunca** el `DATABASE_URL` de producción ni el `.env` local (que tiene la cadena de Neon renombrada).
+Esperado: 348 de 348, sin salteados. **Nunca** el `DATABASE_URL` de producción ni el `.env` del checkout principal: `bun run` carga el `.env` de la carpeta donde corre, y el de ese checkout puede apuntar a una base real. Todo se corre desde el worktree, que no tiene `.env`.
 
 **Mutaciones.** Cada task termina con su mutación, para probar que los tests cazan el arreglo. Primero se commitea. Después se revierte a mano **solo** lo que dice el paso y se corre el test, que tiene que fallar. Por último se restaura con `git checkout -- <archivo>`. Nunca `git stash`. Nunca mutar sin commitear antes: el `checkout` se llevaría la task.
 
