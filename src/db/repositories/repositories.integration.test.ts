@@ -72,6 +72,18 @@ correr('repositorios contra una base real', () => {
     expect(await apps.findByApiKeyHash('no-existe')).toBeNull()
   }, 30_000)
 
+  it('lista las apps activas', async () => {
+    const lista = await apps.listarActivas()
+    expect(lista.map((a) => a.slug)).toContain(SLUG_APP)
+    expect(lista.every((a) => a.active)).toBe(true)
+  }, 30_000)
+
+  it('lista los bots activos', async () => {
+    const lista = await bots.listarActivos()
+    expect(lista.map((b) => b.slug)).toContain(SLUG_BOT)
+    expect(lista.every((b) => b.active)).toBe(true)
+  }, 30_000)
+
   it('encuentra el bot por slug y mapea los nombres de las env vars', async () => {
     const bot = await bots.findBySlug(SLUG_BOT)
     expect(bot?.tokenEnv).toBe('TOKEN_TEST')

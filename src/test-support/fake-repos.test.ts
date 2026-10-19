@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   createFakeAppsRepo,
+  createFakeBotsRepo,
   createFakeContactsRepo,
   createFakeLinkCodesRepo,
   unApp,
+  unBot,
   unContacto,
   unLinkCode,
 } from './fake-repos.js'
@@ -14,6 +16,25 @@ describe('createFakeAppsRepo', () => {
     const repo = createFakeAppsRepo([{ hash: 'h1', app }])
     expect(await repo.findByApiKeyHash('h1')).toEqual(app)
     expect(await repo.findByApiKeyHash('otro')).toBeNull()
+  })
+
+  it('listarActivas deja afuera las apps inactivas', async () => {
+    const activa = unApp({ id: 'app-1', active: true })
+    const apagada = unApp({ id: 'app-2', active: false })
+    const repo = createFakeAppsRepo([
+      { hash: 'h1', app: activa },
+      { hash: 'h2', app: apagada },
+    ])
+    expect(await repo.listarActivas()).toEqual([activa])
+  })
+})
+
+describe('createFakeBotsRepo', () => {
+  it('listarActivos deja afuera los bots inactivos', async () => {
+    const activo = unBot({ id: 'bot-1', active: true })
+    const apagado = unBot({ id: 'bot-2', active: false })
+    const repo = createFakeBotsRepo([activo, apagado])
+    expect(await repo.listarActivos()).toEqual([activo])
   })
 })
 

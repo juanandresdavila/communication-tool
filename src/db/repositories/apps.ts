@@ -47,5 +47,15 @@ export function createAppsRepo(sql: Sql): AppsRepo {
       const fila = filas[0]
       return fila ? aApp(fila) : null
     },
+
+    async listarActivas() {
+      const filas = (await sql`
+        SELECT id, slug, name, delivery_url, schedule_callback_url,
+               delivery_secret_env, active
+        FROM apps
+        WHERE active = true
+      `) as FilaApp[]
+      return filas.map(aApp)
+    },
   }
 }

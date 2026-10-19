@@ -5,7 +5,7 @@ import { wireApp } from './wire.js'
 // responder, un fire-and-forget alcanza. Es el reemplazo documentado del
 // waitUntil de Vercel (ver el comentario en wire.ts / index.ts). El adaptador
 // agrega una red: loguea lo que rechace en vez de dejarlo como rejection suelta.
-const { app, sql } = wireApp(
+const { app, sql, revisarSecretos } = wireApp(
   crearWaitUntilSelfHost((mensaje) => console.error(mensaje)),
 )
 
@@ -15,6 +15,9 @@ const server = Bun.serve({
 })
 
 console.log(`comm-tool escuchando en :${server.port}`)
+
+// Sin await: el aviso de secretos no tiene que demorar ni impedir el arranque.
+void revisarSecretos()
 
 async function apagar(senal: string) {
   console.log(`${senal}: cerrando...`)

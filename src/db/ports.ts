@@ -73,6 +73,8 @@ export interface InboundMessage {
 export interface AppsRepo {
   findByApiKeyHash(hash: string): Promise<App | null>
   findById(id: string): Promise<App | null>
+  /** Las apps con `active = true`: para revisar al arrancar sus secretos. */
+  listarActivas(): Promise<App[]>
 }
 
 export interface BotsRepo {
@@ -82,6 +84,8 @@ export interface BotsRepo {
    * único `bots_app_channel_unico` lo garantiza en la base, no acá.
    */
   findByAppAndChannel(appId: string, channel: Channel): Promise<Bot | null>
+  /** Los bots con `active = true`: para revisar al arrancar sus secretos. */
+  listarActivos(): Promise<Bot[]>
 }
 
 export interface ContactsRepo {
