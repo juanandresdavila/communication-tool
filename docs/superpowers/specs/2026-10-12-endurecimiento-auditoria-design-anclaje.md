@@ -94,6 +94,30 @@ Sin elegir; la recomendación va primero.
   - Alternativa: adentro de `wireApp`. Lo haría correr también en Vercel, que es
     justo lo que se quiere dar de baja.
 
+**Decididas por Juan el 19/10/2026:** las dos recomendadas (`console.error`
+en el sitio con un spy en el test, y el aviso en `server.ts` después de
+`Bun.serve`).
+
+## Re-anclaje del 19/10/2026
+
+Al cerrar las decisiones se sumaron dos secciones de documentación al spec (el
+rollback a Vercel + Neon y la punta 19). Sus citas se contrastaron contra este
+worktree, que no tocó `CLAUDE.md` ni `.env.example` desde `c3885f4`
+(`git diff --stat c3885f4` vacío para los dos), con `awk` y número de línea
+real (un `nl` intermedio daba números corridos porque no cuenta las líneas en
+blanco):
+
+| Cita | Qué hay | Veredicto |
+|---|---|---|
+| `CLAUDE.md:22-26` | El aviso «Rollback transitorio» | ✅ |
+| `CLAUDE.md:31-32` | «Ver §El corte, más abajo, que incluye el rollback» | ✅ |
+| `CLAUDE.md:152-154` | La URL de Vercel «es el **rollback**» | ✅ |
+| `CLAUDE.md:166-177` | §Rollback: volver el bot de gym a GymTracker directo, sin el Vercel de comm-tool | ✅ |
+| `CLAUDE.md:208-306` | §Setup en una máquina nueva, hasta antes de §Operación (`:308`) | ✅ |
+| `CLAUDE.md:210-222` | El aviso de §Setup con `DATABASE_URL_ROLLBACK` | ✅ |
+| `CLAUDE.md:319-326` | Dónde se manda a correr `ver-circuito.ts` | ✅ |
+| `.env.example:1-3`, `:15-19`, `:26-27` | Neon y Vercel en los comentarios | ✅ |
+
 ## PARADA
 
 Anclaje listo: 115 ✅, 0 ❌, 5 ⚠️, 1 🔍, y 2 decisiones abiertas nuevas (más las
