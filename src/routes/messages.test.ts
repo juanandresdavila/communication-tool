@@ -109,6 +109,85 @@ describe('POST /v1/messages', () => {
     expect(res.status).toBe(400)
   })
 
+  describe('topes de los campos que se guardan', () => {
+    const URL_HTTPS = 'https://example.com/'
+    const urlDe = (largo: number) =>
+      URL_HTTPS + 'a'.repeat(largo - URL_HTTPS.length)
+    const clavesDe = (n: number) =>
+      Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, 'v']))
+
+    // Cada caso: el campo justo en el tope (pasa) y un carácter más (400).
+    const casos: Array<{ nombre: string; ok: object; pasado: object }> = [
+      {
+        nombre: 'userId de 201',
+        ok: { userId: 'u'.repeat(200) },
+        pasado: { userId: 'u'.repeat(201) },
+      },
+      {
+        nombre: 'replyToMessageId de 33',
+        ok: { replyToMessageId: 'r'.repeat(32) },
+        pasado: { replyToMessageId: 'r'.repeat(33) },
+      },
+      {
+        nombre: 'template.name de 65',
+        ok: { template: { name: 'n'.repeat(64), vars: {} } },
+        pasado: { template: { name: 'n'.repeat(65), vars: {} } },
+      },
+      {
+        nombre: 'template.vars con 33 claves',
+        ok: { template: { name: 't', vars: clavesDe(32) } },
+        pasado: { template: { name: 't', vars: clavesDe(33) } },
+      },
+      {
+        nombre: 'una clave de vars de 65',
+        ok: { template: { name: 't', vars: { ['k'.repeat(64)]: 'v' } } },
+        pasado: { template: { name: 't', vars: { ['k'.repeat(65)]: 'v' } } },
+      },
+      {
+        nombre: 'un valor de vars de 1025',
+        ok: { template: { name: 't', vars: { k: 'v'.repeat(1024) } } },
+        pasado: { template: { name: 't', vars: { k: 'v'.repeat(1025) } } },
+      },
+      {
+        nombre: 'un botón con texto de 257',
+        ok: { buttons: [[{ text: 't'.repeat(256), data: 'd' }]] },
+        pasado: { buttons: [[{ text: 't'.repeat(257), data: 'd' }]] },
+      },
+      {
+        nombre: 'un botón con url https de 2049',
+        ok: { buttons: [[{ text: 't', url: urlDe(2048) }]] },
+        pasado: { buttons: [[{ text: 't', url: urlDe(2049) }]] },
+      },
+    ]
+
+    it.each(casos)('$nombre da 400 invalid_request', async ({ pasado }) => {
+      const res = await postear(armar().server, { ...VALIDO, ...pasado })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ code: 'invalid_request' })
+    })
+
+    it.each(casos)('$nombre: el mismo campo en el tope pasa', async ({ ok }) => {
+      const cuerpo = { ...VALIDO, ...ok }
+      const { server } = armar({
+        contactos: [unContacto({ appUserId: cuerpo.userId })],
+      })
+      const res = await postear(server, cuerpo)
+      expect(res.status).toBe(200)
+    })
+
+    it('el userId de /edit respeta el mismo tope', async () => {
+      const edit = (userId: string) =>
+        armar().server.request('/v1/messages/edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, messageId: '1', text: 'x' }),
+        })
+      expect((await edit('u'.repeat(201))).status).toBe(400)
+      // En el tope valida y sigue: lo que conteste después no es un 400.
+      expect((await edit('u'.repeat(200))).status).not.toBe(400)
+    })
+  })
+
   it('devuelve 404 not_linked si el usuario no vinculó', async () => {
     const res = await postear(armar({ contactos: [] }).server, VALIDO)
 

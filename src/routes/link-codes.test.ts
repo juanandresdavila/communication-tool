@@ -75,4 +75,14 @@ describe('POST /v1/link-codes', () => {
       (await postear(armar(), { userId: 'u', ttlSeconds: 99_999 })).status,
     ).toBe(400)
   })
+
+  it('rechaza un userId de 201 caracteres y acepta uno de 200', async () => {
+    const largo = await postear(armar(), { userId: 'u'.repeat(201) })
+    expect(largo.status).toBe(400)
+    expect(await largo.json()).toMatchObject({ code: 'invalid_request' })
+
+    expect((await postear(armar(), { userId: 'u'.repeat(200) })).status).toBe(
+      201,
+    )
+  })
 })

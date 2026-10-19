@@ -15,7 +15,7 @@ const TTL_MAXIMO = 24 * 60 * 60
 const BYTES_A_PEDIR = 16
 
 const cuerpoSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1).max(200),
   ttlSeconds: z.number().int().min(1).max(TTL_MAXIMO).optional(),
 })
 

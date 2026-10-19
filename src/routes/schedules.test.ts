@@ -56,4 +56,16 @@ describe('POST /v1/schedules', () => {
     const cuerpo = (await res.json()) as { nextRunAt: string | null }
     expect(cuerpo.nextRunAt).not.toBeNull()
   })
+
+  it('rechaza un userId de 201 caracteres y acepta uno de 200', async () => {
+    const { server } = armar()
+    const base = { name: 'diario', cron: '0 9 * * *', timezone: BA }
+
+    const largo = await postear(server, { ...base, userId: 'u'.repeat(201) })
+    expect(largo.status).toBe(400)
+    expect(await largo.json()).toEqual({ code: 'invalid_request' })
+
+    const justo = await postear(server, { ...base, userId: 'u'.repeat(200) })
+    expect(justo.status).toBe(201)
+  })
 })

@@ -13,6 +13,7 @@ import type {
 import type { DeliveryClient } from './delivery/client.js'
 import { apiKeyAuth, type ConVariablesDeApp } from './middleware/api-key-auth.js'
 import { internalAuth } from './middleware/internal-auth.js'
+import { limiteDeBody } from './middleware/limite-de-body.js'
 import { contactRoutes } from './routes/contacts.js'
 import { healthRoutes } from './routes/health.js'
 import { internalRoutes } from './routes/internal.js'
@@ -68,6 +69,7 @@ export function createApp(deps: Deps): Hono {
   // devuelve 401 en vez de 404.
   const v1 = new Hono<ConVariablesDeApp>()
   v1.use('/v1/*', apiKeyAuth(deps.apps))
+  v1.use('/v1/*', limiteDeBody())
   v1.route('/', linkCodeRoutes(deps))
   v1.route('/', contactRoutes(deps))
   v1.route('/', messageRoutes(deps))
@@ -80,6 +82,7 @@ export function createApp(deps: Deps): Hono {
   const mcp = new Hono<ConVariablesDeApp>()
   mcp.use('/mcp', sinOrigen())
   mcp.use('/mcp', apiKeyAuth(deps.apps))
+  mcp.use('/mcp', limiteDeBody())
   mcp.route('/', mcpRoutes(deps))
   app.route('/', mcp)
 

@@ -13,14 +13,16 @@ import { enviarSaliente } from '../outbound/send.js'
 const LARGO_MAXIMO_TEXTO = 4096
 
 const cuerpoSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1).max(200),
   text: z.string().min(1).max(LARGO_MAXIMO_TEXTO),
   kind: z.enum(['reply', 'notification']),
-  replyToMessageId: z.string().min(1).optional(),
+  replyToMessageId: z.string().min(1).max(32).optional(),
   template: z
     .object({
-      name: z.string().min(1),
-      vars: z.record(z.string(), z.string()),
+      name: z.string().min(1).max(64),
+      vars: z
+        .record(z.string().max(64), z.string().max(1024))
+        .refine((v) => Object.keys(v).length <= 32),
     })
     .optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
@@ -28,7 +30,7 @@ const cuerpoSchema = z.object({
 })
 
 const edicionSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1).max(200),
   // El id DEL PROVEEDOR. Telegram pide un entero, y validarlo acá convierte
   // un 502 del proveedor en un 400 con causa clara.
   messageId: z.string().regex(/^\d+$/),
