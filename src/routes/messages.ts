@@ -57,6 +57,8 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
       template: parseado.data.template ?? null,
       idempotencyKey: parseado.data.idempotencyKey ?? null,
       buttons: parseado.data.buttons ?? null,
+      // /v1 sigue como siempre: la vista previa la decide Telegram.
+      vistaPrevia: true,
     })
 
     switch (resultado.estado) {
@@ -103,6 +105,8 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
       messageId: parseado.data.messageId,
       text: parseado.data.text,
       buttons: parseado.data.buttons ?? null,
+      // /v1 sigue como siempre: la vista previa la decide Telegram.
+      vistaPrevia: true,
     })
 
     switch (resultado.estado) {

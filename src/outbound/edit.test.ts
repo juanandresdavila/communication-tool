@@ -18,6 +18,7 @@ function unaEdicion(over: Partial<PedidoEdicion> = {}): PedidoEdicion {
     messageId: '77',
     text: '¿En qué proyecto?',
     buttons: null,
+    vistaPrevia: true,
     ...over,
   }
 }

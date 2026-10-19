@@ -1,5 +1,14 @@
 import type { Button } from '../../client/types.js'
 
+/**
+ * Opciones de envío que no son contenido del mensaje. `vistaPrevia` en true
+ * deja que Telegram arme la tarjeta del primer link; sin ella (o en false) el
+ * cuerpo lleva la vista previa apagada.
+ */
+export interface OpcionesDeEnvio {
+  vistaPrevia?: boolean
+}
+
 export interface TelegramClient {
   sendMessage(
     token: string,
@@ -7,6 +16,7 @@ export interface TelegramClient {
     text: string,
     replyToMessageId?: string | null,
     botones?: Button[][] | null,
+    opciones?: OpcionesDeEnvio,
   ): Promise<{ messageId: string }>
   /**
    * Obligatorio después de cada toque, aunque no haya nada que avisar: sin él
@@ -19,6 +29,7 @@ export interface TelegramClient {
     messageId: string,
     text: string,
     botones?: Button[][] | null,
+    opciones?: OpcionesDeEnvio,
   ): Promise<void>
 }
 
@@ -50,6 +61,18 @@ function replyParameters(
       allow_sending_without_reply: true,
     },
   }
+}
+
+/**
+ * Apagada por defecto: un link en el texto no tiene por qué hacer que
+ * Telegram (o el servidor del link) arme una tarjeta. Solo `vistaPrevia: true`
+ * deja el cuerpo sin la clave, como lo mandaba /v1 antes.
+ */
+function previewDeLinks(
+  opciones: OpcionesDeEnvio | undefined,
+): Record<string, unknown> {
+  if (opciones?.vistaPrevia === true) return {}
+  return { link_preview_options: { is_disabled: true } }
 }
 
 /** Los dos `InlineKeyboardButton` de Telegram que comm-tool usa. */
@@ -109,7 +132,7 @@ export function createTelegramClient(
   }
 
   return {
-    async sendMessage(token, chatId, text, replyToMessageId, botones) {
+    async sendMessage(token, chatId, text, replyToMessageId, botones, opciones) {
       const resultado = (await llamar(token, 'sendMessage', {
         chat_id: chatId,
         text,
@@ -117,6 +140,7 @@ export function createTelegramClient(
         ...(botones && botones.length > 0
           ? { reply_markup: tecladoInline(botones) }
           : {}),
+        ...previewDeLinks(opciones),
       })) as { message_id?: number } | undefined
 
       return { messageId: String(resultado?.message_id ?? '') }
@@ -128,7 +152,7 @@ export function createTelegramClient(
       })
     },
 
-    async editMessageText(token, chatId, messageId, text, botones) {
+    async editMessageText(token, chatId, messageId, text, botones, opciones) {
       await llamar(token, 'editMessageText', {
         chat_id: chatId,
         // La ruta valida que sea un entero; Telegram lo pide así.
@@ -136,6 +160,7 @@ export function createTelegramClient(
         text,
         // Siempre explícito: sin botones, un teclado vacío saca el que había.
         reply_markup: tecladoInline(botones ?? []),
+        ...previewDeLinks(opciones),
       })
     },
   }

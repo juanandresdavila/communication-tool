@@ -26,6 +26,7 @@ describe('createTelegramClient', () => {
     )
     expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
       chat_id: '12345',
+      link_preview_options: { is_disabled: true },
       text: 'hola',
     })
   })
@@ -41,6 +42,7 @@ describe('createTelegramClient', () => {
 
     expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
       chat_id: '12345',
+      link_preview_options: { is_disabled: true },
       text: 'dale',
       reply_parameters: {
         message_id: 55,
@@ -62,6 +64,7 @@ describe('createTelegramClient', () => {
 
     expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
       chat_id: '12345',
+      link_preview_options: { is_disabled: true },
       text: 'hola',
     })
   })
@@ -79,6 +82,7 @@ describe('createTelegramClient', () => {
 
     expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
       chat_id: '12345',
+      link_preview_options: { is_disabled: true },
       text: 'hola',
     })
   })
@@ -151,6 +155,7 @@ describe('createTelegramClient', () => {
 
     expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
       chat_id: '12345',
+      link_preview_options: { is_disabled: true },
       text: '¿Lo guardo como…?',
       reply_markup: {
         inline_keyboard: [
@@ -175,7 +180,78 @@ describe('createTelegramClient', () => {
 
     expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
       chat_id: '12345',
+      link_preview_options: { is_disabled: true },
       text: 'hola',
+    })
+  })
+
+  it('sin opciones, sendMessage apaga la vista previa', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 84 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', 'hola')
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      text: 'hola',
+      link_preview_options: { is_disabled: true },
+    })
+  })
+
+  it('con vistaPrevia: true el cuerpo es el de hoy', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 85 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.sendMessage('TOKEN', '12345', 'hola', null, null, {
+      vistaPrevia: true,
+    })
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      text: 'hola',
+    })
+  })
+
+  it('sin opciones, editMessageText apaga la vista previa', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 77 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.editMessageText('TOKEN', '12345', '77', 'hola')
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      message_id: 77,
+      text: 'hola',
+      reply_markup: { inline_keyboard: [] },
+      link_preview_options: { is_disabled: true },
+    })
+  })
+
+  it('al editar con vistaPrevia: true el cuerpo es el de hoy', async () => {
+    const { fake, llamadas } = fetchQueDevuelve(200, {
+      ok: true,
+      result: { message_id: 77 },
+    })
+    const cliente = createTelegramClient(fake)
+
+    await cliente.editMessageText('TOKEN', '12345', '77', 'hola', null, {
+      vistaPrevia: true,
+    })
+
+    expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
+      chat_id: '12345',
+      message_id: 77,
+      text: 'hola',
+      reply_markup: { inline_keyboard: [] },
     })
   })
 
@@ -210,6 +286,7 @@ describe('createTelegramClient', () => {
     )
     expect(JSON.parse(String(llamadas[0]?.init?.body))).toEqual({
       chat_id: '12345',
+      link_preview_options: { is_disabled: true },
       message_id: 77,
       text: '¿En qué proyecto?',
       reply_markup: {

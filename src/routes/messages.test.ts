@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
-import type { TelegramClient } from '../channels/telegram/client.js'
+import {
+  createTelegramClient,
+  type TelegramClient,
+} from '../channels/telegram/client.js'
 import { createApp } from '../create-app.js'
 import type { Bot, Contact } from '../db/ports.js'
 import type { ConVariablesDeApp } from '../middleware/api-key-auth.js'
@@ -295,5 +298,43 @@ describe('POST /v1/messages/edit', () => {
       body: JSON.stringify(EDICION),
     })
     expect(res.status).toBe(401)
+  })
+})
+
+describe('vista previa de links en /v1', () => {
+  it('los cuerpos a Telegram de /v1/messages y /v1/messages/edit no llevan link_preview_options', async () => {
+    const cuerpos: Record<string, unknown>[] = []
+    const grabador = async (_url: string | URL | Request, init?: RequestInit) => {
+      cuerpos.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(
+        JSON.stringify({ ok: true, result: { message_id: 9 } }),
+        { status: 200 },
+      )
+    }
+    const server = new Hono<ConVariablesDeApp>()
+    server.use('*', async (c, next) => {
+      c.set('app', unApp())
+      await next()
+    })
+    server.route(
+      '/',
+      messageRoutes({
+        bots: createFakeBotsRepo([unBot()]),
+        contacts: createFakeContactsRepo([unContacto()]),
+        outbound: createFakeOutboundMessagesRepo([]),
+        telegram: createTelegramClient(grabador),
+        secrets: () => 'token',
+      }),
+    )
+
+    const enviado = await postear(server, VALIDO)
+    const editado = await editar(server, EDICION)
+
+    expect(enviado.status).toBe(200)
+    expect(editado.status).toBe(200)
+    expect(cuerpos).toHaveLength(2)
+    for (const cuerpo of cuerpos) {
+      expect(cuerpo).not.toHaveProperty('link_preview_options')
+    }
   })
 })
