@@ -1,6 +1,9 @@
 import { Hono } from 'hono'
 import { describe, expect, it } from 'vitest'
-import type { TelegramClient } from '../channels/telegram/client.js'
+import {
+  createTelegramClient,
+  type TelegramClient,
+} from '../channels/telegram/client.js'
 import { createApp } from '../create-app.js'
 import type { Bot, Contact } from '../db/ports.js'
 import type { ConVariablesDeApp } from '../middleware/api-key-auth.js'
@@ -107,6 +110,64 @@ describe('POST /v1/messages', () => {
   it('rechaza un texto más largo de lo que Telegram acepta', async () => {
     const res = await postear(armar().server, { ...VALIDO, text: 'a'.repeat(4097) })
     expect(res.status).toBe(400)
+  })
+
+  describe('topes de los campos que se guardan', () => {
+    const URL_HTTPS = 'https://example.com/'
+    const urlDe = (largo: number) =>
+      URL_HTTPS + 'a'.repeat(largo - URL_HTTPS.length)
+    const clavesDe = (n: number) =>
+      Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, 'v']))
+
+    // Cada caso: el campo justo en el tope (pasa) y un carácter más (400).
+    const casos: Array<{ nombre: string; ok: object; pasado: object }> = [
+      {
+        nombre: 'replyToMessageId de 33',
+        ok: { replyToMessageId: 'r'.repeat(32) },
+        pasado: { replyToMessageId: 'r'.repeat(33) },
+      },
+      {
+        nombre: 'template.name de 65',
+        ok: { template: { name: 'n'.repeat(64), vars: {} } },
+        pasado: { template: { name: 'n'.repeat(65), vars: {} } },
+      },
+      {
+        nombre: 'template.vars con 33 claves',
+        ok: { template: { name: 't', vars: clavesDe(32) } },
+        pasado: { template: { name: 't', vars: clavesDe(33) } },
+      },
+      {
+        nombre: 'una clave de vars de 65',
+        ok: { template: { name: 't', vars: { ['k'.repeat(64)]: 'v' } } },
+        pasado: { template: { name: 't', vars: { ['k'.repeat(65)]: 'v' } } },
+      },
+      {
+        nombre: 'un valor de vars de 1025',
+        ok: { template: { name: 't', vars: { k: 'v'.repeat(1024) } } },
+        pasado: { template: { name: 't', vars: { k: 'v'.repeat(1025) } } },
+      },
+      {
+        nombre: 'un botón con texto de 257',
+        ok: { buttons: [[{ text: 't'.repeat(256), data: 'd' }]] },
+        pasado: { buttons: [[{ text: 't'.repeat(257), data: 'd' }]] },
+      },
+      {
+        nombre: 'un botón con url https de 2049',
+        ok: { buttons: [[{ text: 't', url: urlDe(2048) }]] },
+        pasado: { buttons: [[{ text: 't', url: urlDe(2049) }]] },
+      },
+    ]
+
+    it.each(casos)('$nombre da 400 invalid_request', async ({ pasado }) => {
+      const res = await postear(armar().server, { ...VALIDO, ...pasado })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ code: 'invalid_request' })
+    })
+
+    it.each(casos)('$nombre: el mismo campo en el tope pasa', async ({ ok }) => {
+      const res = await postear(armar().server, { ...VALIDO, ...ok })
+      expect(res.status).toBe(200)
+    })
   })
 
   it('devuelve 404 not_linked si el usuario no vinculó', async () => {
@@ -237,5 +298,43 @@ describe('POST /v1/messages/edit', () => {
       body: JSON.stringify(EDICION),
     })
     expect(res.status).toBe(401)
+  })
+})
+
+describe('vista previa de links en /v1', () => {
+  it('los cuerpos a Telegram de /v1/messages y /v1/messages/edit no llevan link_preview_options', async () => {
+    const cuerpos: Record<string, unknown>[] = []
+    const grabador = async (_url: string | URL | Request, init?: RequestInit) => {
+      cuerpos.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(
+        JSON.stringify({ ok: true, result: { message_id: 9 } }),
+        { status: 200 },
+      )
+    }
+    const server = new Hono<ConVariablesDeApp>()
+    server.use('*', async (c, next) => {
+      c.set('app', unApp())
+      await next()
+    })
+    server.route(
+      '/',
+      messageRoutes({
+        bots: createFakeBotsRepo([unBot()]),
+        contacts: createFakeContactsRepo([unContacto()]),
+        outbound: createFakeOutboundMessagesRepo([]),
+        telegram: createTelegramClient(grabador),
+        secrets: () => 'token',
+      }),
+    )
+
+    const enviado = await postear(server, VALIDO)
+    const editado = await editar(server, EDICION)
+
+    expect(enviado.status).toBe(200)
+    expect(editado.status).toBe(200)
+    expect(cuerpos).toHaveLength(2)
+    for (const cuerpo of cuerpos) {
+      expect(cuerpo).not.toHaveProperty('link_preview_options')
+    }
   })
 })

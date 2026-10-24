@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { createServer, type Server } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createDeliveryClient } from './client.js'
 
 function fetchQue(respuesta: () => Promise<Response>) {
@@ -91,5 +93,92 @@ describe('createDeliveryClient', () => {
       timeoutMs: 5000,
     })
     expect(llamadas[0]?.init?.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('no sigue redirecciones', async () => {
+    const { fake, llamadas } = fetchQue(ok)
+    await createDeliveryClient(fake).entregar({
+      url: 'https://app.test/inbound',
+      cuerpo: '{}',
+      firma: 't=1,v1=a',
+      deliveryId: 'd',
+      timeoutMs: 5000,
+    })
+    expect(llamadas[0]?.init?.redirect).toBe('manual')
+  })
+
+  it('un 307 es una entrega fallida', async () => {
+    const { fake } = fetchQue(() =>
+      Promise.resolve(
+        new Response(null, {
+          status: 307,
+          headers: { Location: 'https://otro.test/' },
+        }),
+      ),
+    )
+    const res = await createDeliveryClient(fake).entregar({
+      url: 'https://app.test/inbound',
+      cuerpo: '{}',
+      firma: 't=1,v1=a',
+      deliveryId: 'd',
+      timeoutMs: 5000,
+    })
+    expect(res).toEqual({
+      ok: false,
+      status: 307,
+      error: 'la app respondió 307',
+    })
+  })
+
+  describe('loopback', () => {
+    const servidores: Server[] = []
+
+    afterEach(async () => {
+      await Promise.all(
+        servidores.splice(0).map(
+          (s) =>
+            new Promise<void>((resolve) => {
+              s.closeAllConnections()
+              s.close(() => resolve())
+            }),
+        ),
+      )
+    })
+
+    function escuchar(server: Server): Promise<number> {
+      servidores.push(server)
+      return new Promise((resolve) => {
+        server.listen(0, '127.0.0.1', () =>
+          resolve((server.address() as AddressInfo).port),
+        )
+      })
+    }
+
+    it('un 307 no llega al segundo servidor', async () => {
+      let pedidosAlSegundo = 0
+      const segundo = createServer((_req, res) => {
+        pedidosAlSegundo++
+        res.statusCode = 200
+        res.end()
+      })
+      const puertoSegundo = await escuchar(segundo)
+      const primero = createServer((_req, res) => {
+        res.statusCode = 307
+        res.setHeader('Location', `http://127.0.0.1:${puertoSegundo}/robo`)
+        res.end()
+      })
+      const puertoPrimero = await escuchar(primero)
+
+      const res = await createDeliveryClient().entregar({
+        url: `http://127.0.0.1:${puertoPrimero}/inbound`,
+        cuerpo: '{}',
+        firma: 't=1,v1=a',
+        deliveryId: 'd',
+        timeoutMs: 5000,
+      })
+
+      expect(res.ok).toBe(false)
+      expect(pedidosAlSegundo).toBe(0)
+    })
   })
 })

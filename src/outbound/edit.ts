@@ -10,6 +10,8 @@ export interface PedidoEdicion {
   text: string
   /** null saca el teclado que tenía el mensaje. */
   buttons: Button[][] | null
+  /** Si Telegram arma la tarjeta del primer link. Obligatorio, como en PedidoSaliente. */
+  vistaPrevia: boolean
 }
 
 export type ResultadoEdicion =
@@ -53,6 +55,7 @@ export async function editarSaliente(
       pedido.messageId,
       pedido.text,
       pedido.buttons,
+      { vistaPrevia: pedido.vistaPrevia },
     )
     return { estado: 'edited' }
   } catch (error) {

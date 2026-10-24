@@ -188,6 +188,9 @@ export function createFakeAppsRepo(
     async findById(id) {
       return entradas.find((e) => e.app.id === id)?.app ?? null
     },
+    async listarActivas() {
+      return entradas.filter((e) => e.app.active).map((e) => e.app)
+    },
   }
 }
 
@@ -302,6 +305,9 @@ export function createFakeBotsRepo(bots: Bot[]): BotsRepo {
           (b) => b.appId === appId && b.channel === channel && b.active,
         ) ?? null
       )
+    },
+    async listarActivos() {
+      return bots.filter((b) => b.active)
     },
   }
 }

@@ -16,11 +16,13 @@ const cuerpoSchema = z.object({
   userId: z.string().min(1),
   text: z.string().min(1).max(LARGO_MAXIMO_TEXTO),
   kind: z.enum(['reply', 'notification']),
-  replyToMessageId: z.string().min(1).optional(),
+  replyToMessageId: z.string().min(1).max(32).optional(),
   template: z
     .object({
-      name: z.string().min(1),
-      vars: z.record(z.string(), z.string()),
+      name: z.string().min(1).max(64),
+      vars: z
+        .record(z.string().max(64), z.string().max(1024))
+        .refine((v) => Object.keys(v).length <= 32),
     })
     .optional(),
   idempotencyKey: z.string().min(1).max(200).optional(),
@@ -55,6 +57,8 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
       template: parseado.data.template ?? null,
       idempotencyKey: parseado.data.idempotencyKey ?? null,
       buttons: parseado.data.buttons ?? null,
+      // /v1 sigue como siempre: la vista previa la decide Telegram.
+      vistaPrevia: true,
     })
 
     switch (resultado.estado) {
@@ -101,6 +105,8 @@ export function messageRoutes(deps: SendDeps): Hono<ConVariablesDeApp> {
       messageId: parseado.data.messageId,
       text: parseado.data.text,
       buttons: parseado.data.buttons ?? null,
+      // /v1 sigue como siempre: la vista previa la decide Telegram.
+      vistaPrevia: true,
     })
 
     switch (resultado.estado) {

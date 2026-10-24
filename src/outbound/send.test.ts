@@ -25,6 +25,7 @@ function unPedido(over: Partial<PedidoSaliente> = {}): PedidoSaliente {
     template: null,
     idempotencyKey: null,
     buttons: null,
+    vistaPrevia: true,
     ...over,
   }
 }

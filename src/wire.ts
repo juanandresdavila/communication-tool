@@ -12,11 +12,14 @@ import { createSchedulesRepo } from './db/repositories/schedules.js'
 import { createDeliveryClient } from './delivery/client.js'
 import { parseEnv } from './env.js'
 import { crearPresupuesto, PRESUPUESTO_POR_DEFECTO } from './presupuesto.js'
+import { revisarSecretosReferenciados } from './revisar-secretos.js'
 import { createSecretReader } from './secrets.js'
 
 export interface Wired {
   app: Hono
   sql: Sql
+  /** Avisa por log los secretos referenciados que faltan o no sirven. No tira. */
+  revisarSecretos: () => Promise<void>
 }
 
 /**
@@ -28,11 +31,14 @@ export function wireApp(waitUntil: (promesa: Promise<unknown>) => void): Wired {
   // Único lugar del servicio que lee process.env.
   const env = parseEnv(process.env)
   const sql = createSql(env.DATABASE_URL)
+  // Una sola instancia, compartida con createApp y con la revisión de arranque.
+  const apps = createAppsRepo(sql)
+  const bots = createBotsRepo(sql)
 
   const app: Hono = createApp({
     db: createDb(sql),
-    apps: createAppsRepo(sql),
-    bots: createBotsRepo(sql),
+    apps,
+    bots,
     contacts: createContactsRepo(sql),
     linkCodes: createLinkCodesRepo(sql),
     telegram: createTelegramClient(),
@@ -52,5 +58,14 @@ export function wireApp(waitUntil: (promesa: Promise<unknown>) => void): Wired {
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   })
 
-  return { app, sql }
+  const revisarSecretos = async () => {
+    await revisarSecretosReferenciados({
+      apps,
+      bots,
+      entorno: process.env,
+      log: (mensaje) => console.warn(mensaje),
+    })
+  }
+
+  return { app, sql, revisarSecretos }
 }

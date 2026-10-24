@@ -16,6 +16,7 @@
  * para un diagnóstico.
  */
 import postgres from 'postgres'
+import { neutralizarControles } from '../src/diagnostico/neutralizar-controles.js'
 
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -28,6 +29,21 @@ if (!url) {
 }
 const c = postgres(url, { max: 1 })
 
+// El texto, el error y el nombre vienen de quien escribe al bot: se escapan
+// los controles antes de que lleguen al terminal.
+const COLUMNAS_DE_TEXTO = ['texto', 'error', 'nombre']
+const limpiar = (filas: readonly Record<string, unknown>[]) =>
+  filas.map((fila) =>
+    Object.fromEntries(
+      Object.entries(fila).map(([k, v]) => [
+        k,
+        COLUMNAS_DE_TEXTO.includes(k) && typeof v === 'string'
+          ? neutralizarControles(v)
+          : v,
+      ]),
+    ),
+  )
+
 const entrantes = await c.unsafe(
   `SELECT provider_update_id AS update_id, left(text, 28) AS texto,
           delivery_status AS estado, delivery_attempts AS intentos,
@@ -35,7 +51,7 @@ const entrantes = await c.unsafe(
    FROM inbound_messages ORDER BY received_at DESC LIMIT 8`,
 )
 console.log('ENTRANTES (los últimos 8):')
-console.table([...entrantes])
+console.table(limpiar(entrantes))
 
 const salientes = await c.unsafe(
   `SELECT left(text, 32) AS texto, kind, status AS estado,
@@ -43,7 +59,7 @@ const salientes = await c.unsafe(
    FROM outbound_messages ORDER BY created_at DESC LIMIT 8`,
 )
 console.log('SALIENTES (los últimos 8):')
-console.table([...salientes])
+console.table(limpiar(salientes))
 
 const programados = await c.unsafe<{ callback: string }[]>(
   `SELECT s.name AS nombre, s.cron, s.timezone AS zona, s.next_run_at AS proximo,
@@ -54,7 +70,7 @@ const programados = await c.unsafe<{ callback: string }[]>(
    ORDER BY s.next_run_at`,
 )
 console.log('PROGRAMADOS:')
-console.table([...programados])
+console.table(limpiar(programados))
 
 // Un programado sin callback se marca `failed` sin postear nada, que es
 // indistinguible de una app caída si no se mira esta columna.

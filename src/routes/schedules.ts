@@ -5,7 +5,7 @@ import type { ConVariablesDeApp } from '../middleware/api-key-auth.js'
 import { cronValido, proximaEjecucion, zonaValida } from '../schedules/cron.js'
 
 const cuerpoSchema = z.object({
-  userId: z.string().min(1),
+  userId: z.string().min(1).max(200),
   name: z.string().min(1).max(64),
   cron: z.string().min(1).max(120),
   timezone: z.string().min(1).max(64),

@@ -25,9 +25,9 @@ function esHttps(u: string): boolean {
 
 const botonSchema = z
   .object({
-    text: z.string().min(1),
+    text: z.string().min(1).max(256),
     data: z.string().optional(),
-    url: z.string().optional(),
+    url: z.string().max(2048).optional(),
   })
   .refine(
     (b) => (b.data === undefined) !== (b.url === undefined),

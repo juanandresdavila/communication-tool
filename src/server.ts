@@ -1,11 +1,13 @@
+import { crearWaitUntilSelfHost } from './wait-until-self-host.js'
 import { wireApp } from './wire.js'
 
 // Self-host: el proceso vive, no hay runtime que corte la request al
-// responder — un fire-and-forget alcanza. Es el reemplazo documentado del
-// waitUntil de Vercel (ver el comentario en wire.ts / index.ts).
-const { app, sql } = wireApp((promesa) => {
-  void promesa
-})
+// responder, un fire-and-forget alcanza. Es el reemplazo documentado del
+// waitUntil de Vercel (ver el comentario en wire.ts / index.ts). El adaptador
+// agrega una red: loguea lo que rechace en vez de dejarlo como rejection suelta.
+const { app, sql, revisarSecretos } = wireApp(
+  crearWaitUntilSelfHost((mensaje) => console.error(mensaje)),
+)
 
 const server = Bun.serve({
   port: Number(process.env.PORT ?? 3000),
@@ -13,6 +15,9 @@ const server = Bun.serve({
 })
 
 console.log(`comm-tool escuchando en :${server.port}`)
+
+// Sin await: el aviso de secretos no tiene que demorar ni impedir el arranque.
+void revisarSecretos()
 
 async function apagar(senal: string) {
   console.log(`${senal}: cerrando...`)

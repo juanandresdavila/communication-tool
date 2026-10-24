@@ -1,3 +1,4 @@
+import { neutralizarControles } from '../src/diagnostico/neutralizar-controles.js'
 import { firmaValida } from '../src/client/signature.js'
 
 const SECRETO = process.env.DELIVERY_SECRET_GYM ?? ''
@@ -18,12 +19,15 @@ export default {
     }
 
     if (vistos.has(deliveryId)) {
-      console.log(`duplicado ${deliveryId} — deduplicado, no se procesa`)
+      console.log(`duplicado ${neutralizarControles(deliveryId)} — deduplicado, no se procesa`)
       return new Response('ok', { status: 200 })
     }
     vistos.add(deliveryId)
 
-    console.log(`ENTREGA OK ${deliveryId}:`, cuerpo)
+    console.log(
+      `ENTREGA OK ${neutralizarControles(deliveryId)}:`,
+      neutralizarControles(cuerpo),
+    )
     return new Response('ok', { status: 200 })
   },
 }

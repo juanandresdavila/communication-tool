@@ -30,6 +30,12 @@ export interface PedidoSaliente {
   template: OutboundTemplate | null
   idempotencyKey: string | null
   buttons: Button[][] | null
+  /**
+   * Si Telegram arma la tarjeta del primer link. Obligatorio para que cada
+   * llamador decida. No se guarda en la fila: un reintento sobre una clave ya
+   * usada manda con lo que diga el pedido nuevo.
+   */
+  vistaPrevia: boolean
 }
 
 export type ResultadoSaliente =
@@ -82,6 +88,7 @@ export async function enviarSaliente(
       reservado.text,
       reservado.replyToMessageId,
       reservado.buttons,
+      { vistaPrevia: pedido.vistaPrevia },
     )
     await deps.outbound.marcarEnviado(reservado.id, messageId)
     return { estado: 'sent', mensaje: reservado, providerMessageId: messageId }

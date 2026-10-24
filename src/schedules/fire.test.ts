@@ -4,6 +4,7 @@ import {
   createFakeSchedulesRepo,
   unSchedule,
 } from '../test-support/fake-schedules.js'
+import type { SecretReader } from '../secrets.js'
 import { createFakeAppsRepo, unApp } from '../test-support/fake-repos.js'
 import { dispararProgramado, GRACIA_MS } from './fire.js'
 
@@ -12,7 +13,11 @@ const AGENDADO = '2026-08-03T01:00:00.000Z'
 const CALLBACK = 'https://gym.example/api/messaging/schedule'
 
 function armar(
-  opts: { respuesta?: EntregaResultado; callbackUrl?: string | null } = {},
+  opts: {
+    respuesta?: EntregaResultado
+    callbackUrl?: string | null
+    secretos?: SecretReader
+  } = {},
 ) {
   const pedidos: { url: string; cuerpo: string; deliveryId: string }[] = []
 
@@ -42,7 +47,7 @@ function armar(
           return opts.respuesta ?? { ok: true, status: 200 }
         },
       },
-      secrets: () => 'secreto',
+      secrets: opts.secretos ?? (() => 'secreto'),
       now: () => AHORA,
     },
   }
@@ -100,6 +105,24 @@ describe('dispararProgramado', () => {
     expect(tras[0]?.schedule.lastStatus).toBe('failed')
   })
 
+  it('un secreto ilegible marca fallido y restaura la hora', async () => {
+    const { deps, pedidos, schedules } = armar({
+      secretos: () => {
+        throw new Error(
+          'Falta la variable de entorno DELIVERY_SECRET_GYM, referenciada desde la base',
+        )
+      },
+    })
+    expect(await dispararProgramado(deps, unSchedule(), AGENDADO)).toBe(
+      'failed',
+    )
+    expect(pedidos).toEqual([])
+
+    const tras = await schedules.claimVencidos(AHORA, 25)
+    expect(tras[0]?.agendadoPara).toBe(AGENDADO)
+    expect(tras[0]?.schedule.lastStatus).toBe('failed')
+  })
+
   it('se da por perdido pasada la ventana de gracia', async () => {
     const viejo = new Date(AHORA.getTime() - GRACIA_MS - 1000).toISOString()
     const { deps, pedidos, schedules } = armar()
@@ -124,10 +147,26 @@ describe('dispararProgramado', () => {
     expect(pedidos).toEqual([])
   })
 
-  it('marca fallido si la expresión cron dejó de ser válida', async () => {
-    const { deps, pedidos } = armar()
+  it('deja terminal un programado sin próxima ejecución', async () => {
+    const { deps, pedidos, schedules } = armar()
     const roto = unSchedule({ cron: 'esto no es cron' })
     expect(await dispararProgramado(deps, roto, AGENDADO)).toBe('failed')
     expect(pedidos).toEqual([])
+
+    // Terminal: no vuelve al claim con su hora, que era lo que pasaba antes.
+    expect(
+      await schedules.claimVencidos(new Date('2100-01-01T00:00:00.000Z'), 25),
+    ).toEqual([])
+  })
+
+  it('deja terminal un cron de un solo disparo ya pasado', async () => {
+    const { deps, pedidos, schedules } = armar()
+    const unico = unSchedule({ cron: '2026-08-01T00:00:00' })
+    expect(await dispararProgramado(deps, unico, AGENDADO)).toBe('failed')
+    expect(pedidos).toEqual([])
+
+    expect(
+      await schedules.claimVencidos(new Date('2100-01-01T00:00:00.000Z'), 25),
+    ).toEqual([])
   })
 })

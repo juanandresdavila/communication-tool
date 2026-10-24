@@ -6,6 +6,7 @@ import {
   parseCommand,
   parseTelegramUpdate,
 } from '../channels/telegram/parse-update.js'
+import { sanearJson } from '../channels/telegram/sanear-json.js'
 import type { Comando, UpdateDeToque } from '../channels/telegram/types.js'
 import type {
   Bot,
@@ -33,6 +34,18 @@ export interface TelegramWebhookDeps extends DeliverDeps {
 }
 
 const COMANDOS_DE_VINCULACION = new Set(['vincular', 'link'])
+
+/**
+ * El `.catch` de la entrega que deja el webhook. Si la entrega tira (la base
+ * se cae, por ejemplo) no se pierde nada: la fila sigue `pending` y la retoma
+ * el tick. Solo queda el rastro en el log, con el id y el mensaje del error.
+ */
+function registrarEntregaFallida(idEntrante: string) {
+  return (error: unknown): void => {
+    const mensaje = error instanceof Error ? error.message : String(error)
+    console.error(`la entrega del entrante ${idEntrante} tiró: ${mensaje}`)
+  }
+}
 
 function esVinculacion(comando: Comando): boolean {
   if (COMANDOS_DE_VINCULACION.has(comando.nombre)) return true
@@ -62,7 +75,11 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
       return c.json({ code: 'unauthorized' }, 401)
     }
 
-    const crudo: unknown = await c.req.json().catch(() => null)
+    // Se sanea ANTES de todo lo demás: un U+0000 o un surrogate suelto en
+    // cualquier campo (texto, `data`, un nombre del `raw`) hace que Postgres
+    // rechace el INSERT, el webhook dé 500 y Telegram reintente el mismo
+    // update para siempre.
+    const crudo: unknown = sanearJson(await c.req.json().catch(() => null))
     const update = parseTelegramUpdate(crudo)
     // Un update que no sabemos leer (edición, encuesta) se acepta y se
     // descarta: devolverle un error a Telegram provocaría reintentos eternos
@@ -91,9 +108,9 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
 
       deps.waitUntil(
         // 🚨 El .catch no es decorativo: sendMessage TIRA cuando Telegram
-        // rechaza, y el waitUntil de server.ts es `void promesa`, que no
-        // captura rejections. Sin esto cada respuesta fallida deja una suelta.
-        // Se traga el error a propósito: no hay a quién avisarle de que un
+        // rechaza. server.ts ahora tiene una red en el adaptador, pero la
+        // regla se mantiene: el .catch va en el sitio, porque quien origina el
+        // trabajo sabe qué significa que falle. Se traga el error a propósito: no hay a quién avisarle de que un
         // desconocido no recibió su pista, y reintentar sería amplificar más.
         deps.telegram
           .sendMessage(token, update.chatId, texto)
@@ -143,7 +160,11 @@ export function telegramWebhookRoutes(deps: TelegramWebhookDeps): Hono {
     }
 
     // El 200 sale ya; la entrega ocurre después de la respuesta.
-    deps.waitUntil(entregarConReintentoInmediato(deps, guardado))
+    deps.waitUntil(
+      entregarConReintentoInmediato(deps, guardado).catch(
+        registrarEntregaFallida(guardado.id),
+      ),
+    )
     return c.json({ ok: true })
   })
 
@@ -198,15 +219,21 @@ async function recibirToque(
   if (!guardado) return
 
   deps.waitUntil(
-    // Mismo .catch que las respuestas: el waitUntil de server.ts no captura
-    // rejections, y answerCallbackQuery tira cuando Telegram rechaza (por
-    // ejemplo, un toque de hace más de unos segundos).
+    // Mismo .catch que las respuestas, puesto en el sitio aunque server.ts
+    // tenga una red en el adaptador: answerCallbackQuery tira cuando Telegram
+    // rechaza (por ejemplo, un toque de hace más de unos segundos).
     deps.telegram
       .answerCallbackQuery(token, update.callbackId)
       .catch(() => undefined),
   )
 
-  if (contacto) deps.waitUntil(entregarConReintentoInmediato(deps, guardado))
+  if (contacto) {
+    deps.waitUntil(
+      entregarConReintentoInmediato(deps, guardado).catch(
+        registrarEntregaFallida(guardado.id),
+      ),
+    )
+  }
 }
 
 async function vincular(

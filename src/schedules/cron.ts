@@ -27,9 +27,11 @@ export function proximaEjecucion(
 export function cronValido(expresion: string): boolean {
   if (expresion.trim() === '') return false
   try {
-    // Se pide la próxima ejecución además de construirlo: croner acepta
-    // algunas expresiones que después no producen ninguna corrida.
-    return new Cron(expresion).nextRun() !== null
+    // Se piden DOS próximas ejecuciones, no una: una fecha ISO o un patrón de
+    // siete campos con año construyen bien y tienen una sola ocurrencia, y
+    // después de ella el programado quedaría sin próxima. Un recurrente raro
+    // como el 29 de febrero sí da dos.
+    return new Cron(expresion).nextRuns(2).length === 2
   } catch {
     return false
   }

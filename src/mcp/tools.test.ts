@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { TelegramClient } from '../channels/telegram/client.js'
+import {
+  createTelegramClient,
+  type TelegramClient,
+} from '../channels/telegram/client.js'
 import type { Bot, Contact } from '../db/ports.js'
 import type { SendDeps } from '../outbound/send.js'
 import {
@@ -70,6 +73,32 @@ describe('ejecutarTool: enviar_mensaje', () => {
     })
 
     expect(r).toEqual({ tipo: 'ok', texto: expect.stringContaining('tg-1') })
+  })
+
+  it('enviar_mensaje manda la vista previa apagada', async () => {
+    const cuerpos: unknown[] = []
+    const grabador = async (_url: string | URL | Request, init?: RequestInit) => {
+      cuerpos.push(JSON.parse(String(init?.body)))
+      return new Response(
+        JSON.stringify({ ok: true, result: { message_id: 9 } }),
+        { status: 200 },
+      )
+    }
+    const deps: SendDeps = {
+      ...armarDeps(),
+      telegram: createTelegramClient(grabador),
+    }
+
+    const r = await ejecutarTool(deps, APP_ID, 'enviar_mensaje', {
+      userId: 'user-1',
+      text: 'mirá https://example.com',
+    })
+
+    expect(r.tipo).toBe('ok')
+    expect(cuerpos).toHaveLength(1)
+    expect(cuerpos[0]).toMatchObject({
+      link_preview_options: { is_disabled: true },
+    })
   })
 
   it('un usuario no vinculado es error de ejecucion, no de protocolo', async () => {

@@ -133,6 +133,7 @@ async function enviar(
     idempotencyKey: parseado.data.idempotencyKey ?? null,
     // Las tools MCP siguen siendo sólo texto (spec del bot interactivo, §1).
     buttons: null,
+    vistaPrevia: false,
   })
 
   switch (resultado.estado) {

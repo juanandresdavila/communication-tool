@@ -74,6 +74,13 @@ export function createFakeSchedulesRepo(
           (s) =>
             s.active && s.nextRunAt !== null && new Date(s.nextRunAt) <= ahora,
         )
+        // Como el ORDER BY del repositorio real: con límite, los más viejos
+        // primero.
+        .sort(
+          (a, b) =>
+            new Date(a.nextRunAt ?? 0).getTime() -
+            new Date(b.nextRunAt ?? 0).getTime(),
+        )
         .slice(0, limite)
 
       // Se captura el horario original ANTES de pisarlo con el lease, igual
@@ -103,6 +110,15 @@ export function createFakeSchedulesRepo(
       s.lastStatus = 'failed'
       // Restaura el horario original: sin esto la ventana de gracia no vence.
       s.nextRunAt = agendadoPara.toISOString()
+    },
+
+    async marcarSinProxima(id, ahora) {
+      const s = filas.find((x) => x.id === id)
+      if (!s) return
+      s.active = false
+      s.nextRunAt = null
+      s.lastRunAt = ahora.toISOString()
+      s.lastStatus = 'failed'
     },
 
     async marcarPerdido(id, ahora, proxima) {

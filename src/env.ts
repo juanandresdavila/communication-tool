@@ -1,6 +1,7 @@
 // Zod 4 se importa como namespace. `import { z } from 'zod'` resuelve a
 // undefined bajo Vitest según qué entry point del paquete se elija.
 import * as z from 'zod'
+import { motivoSecretoInvalido } from './secrets.js'
 
 /**
  * Lo único que necesita hablar con la base. Va aparte del entorno completo
@@ -13,7 +14,13 @@ const databaseSchema = z.object({
 })
 
 const envSchema = databaseSchema.extend({
-  INTERNAL_SECRET: z.string().min(1, 'es obligatoria'),
+  INTERNAL_SECRET: z
+    .string()
+    .min(1, 'es obligatoria')
+    .superRefine((valor, ctx) => {
+      const motivo = motivoSecretoInvalido(valor)
+      if (motivo !== null) ctx.addIssue({ code: 'custom', message: motivo })
+    }),
 })
 
 export type DatabaseEnv = z.infer<typeof databaseSchema>

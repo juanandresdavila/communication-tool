@@ -33,9 +33,12 @@ export async function dispararProgramado(
 
   const proxima = proximaEjecucion(schedule.cron, schedule.timezone, ahora)
   if (!proxima) {
-    // La expresión dejó de ser válida. Se marca fallido y se restaura el
-    // horario: queda visible en `last_status` en vez de desaparecer.
-    await deps.schedules.marcarFallido(schedule.id, ahora, agendado)
+    // Sin próxima ejecución (expresión inválida o un patrón que ya no ocurre)
+    // el estado es terminal: reintentar no la hace aparecer. Restaurar el
+    // horario, como en un fallo de entrega, la devolvería al claim en cada
+    // tick hasta que la ventana de gracia la diera por perdida. Queda
+    // inactivo y visible en `last_status`.
+    await deps.schedules.marcarSinProxima(schedule.id, ahora)
     return 'failed'
   }
 
@@ -60,14 +63,25 @@ export async function dispararProgramado(
     firedAt: ahora.toISOString(),
   })
 
-  const resultado = await deps.delivery.entregar({
-    url: app.scheduleCallbackUrl,
-    cuerpo,
-    firma: headerDeFirma(
+  // Sin el secreto no hay con qué firmar: es un fallo del disparo, no una
+  // excepción. Se restaura la hora para que la gracia lo dé por perdido en
+  // vez de dejar el programado reclamado en loop.
+  let firma: string
+  try {
+    firma = headerDeFirma(
       deps.secrets(app.deliverySecretEnv),
       cuerpo,
       Math.floor(ahora.getTime() / 1000),
-    ),
+    )
+  } catch {
+    await deps.schedules.marcarFallido(schedule.id, ahora, agendado)
+    return 'failed'
+  }
+
+  const resultado = await deps.delivery.entregar({
+    url: app.scheduleCallbackUrl,
+    cuerpo,
+    firma,
     // Estable a propósito: si un reintento del mismo disparo llega dos veces,
     // la app lo deduplica por este id. Un uuid nuevo por intento haría que el
     // check-in se mandara dos veces.

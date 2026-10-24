@@ -1,11 +1,16 @@
 import { Hono } from 'hono'
 import type { DeliverDeps } from '../delivery/deliver.js'
-import { intentarEntrega } from '../delivery/deliver.js'
+import { intentarEntrega, marcarIntentoFallido } from '../delivery/deliver.js'
 import type { FireDeps } from '../schedules/fire.js'
 import { dispararProgramado } from '../schedules/fire.js'
 
 /** Tope por tick: acota la duración de la invocación. */
 const LOTE = 25
+
+/** Un throw puede no ser un Error (null, un string): no debe tumbar el catch. */
+function mensajeDe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
   const rutas = new Hono()
@@ -15,10 +20,27 @@ export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
 
     let entregados = 0
     let fallidos = 0
+    let errores = 0
     for (const mensaje of pendientes) {
-      const resultado = await intentarEntrega(deps, mensaje)
-      if (resultado === 'delivered') entregados += 1
-      if (resultado === 'failed') fallidos += 1
+      // Un ítem que tira no puede frenar a los demás: cada uno, aislado.
+      try {
+        const resultado = await intentarEntrega(deps, mensaje)
+        if (resultado === 'delivered') entregados += 1
+        if (resultado === 'failed') fallidos += 1
+      } catch (e) {
+        errores += 1
+        const motivo = mensajeDe(e)
+        console.error(`tick: falló el entrante ${mensaje.id}: ${motivo}`)
+        // Sin la marca el mensaje volvería al claim sin contar intentos. Si
+        // la marca también tira, el lease lo devuelve más adelante.
+        await marcarIntentoFallido(deps, mensaje, deps.now(), motivo).catch(
+          (e2: unknown) => {
+            console.error(
+              `tick: no se pudo marcar el entrante ${mensaje.id}: ${mensajeDe(e2)}`,
+            )
+          },
+        )
+      }
     }
 
     // El mismo ticker que despierta los reintentos dispara los programados:
@@ -27,17 +49,37 @@ export function internalRoutes(deps: DeliverDeps & FireDeps): Hono {
     const programados = await deps.schedules.claimVencidos(deps.now(), LOTE)
     let disparados = 0
     for (const { schedule, agendadoPara } of programados) {
-      const r = await dispararProgramado(deps, schedule, agendadoPara)
-      if (r === 'fired') disparados += 1
+      try {
+        const r = await dispararProgramado(deps, schedule, agendadoPara)
+        if (r === 'fired') disparados += 1
+      } catch (e) {
+        errores += 1
+        console.error(
+          `tick: falló el programado ${schedule.id}: ${mensajeDe(e)}`,
+        )
+        // Se restaura la hora: el lease lo dejaría 5 minutos afuera, y la
+        // gracia lo da por perdido si el problema no se arregla.
+        await deps.schedules
+          .marcarFallido(schedule.id, deps.now(), new Date(agendadoPara))
+          .catch((e2: unknown) => {
+            console.error(
+              `tick: no se pudo marcar el programado ${schedule.id}: ${mensajeDe(e2)}`,
+            )
+          })
+      }
     }
 
-    return c.json({
+    const conteos = {
       procesados: pendientes.length,
       entregados,
       fallidos,
       programados: programados.length,
       disparados,
-    })
+    }
+    // 500 si algún ítem tiró: el ticker externo lo registra como falla aunque
+    // el resto se haya procesado.
+    if (errores > 0) return c.json({ ...conteos, errores }, 500)
+    return c.json(conteos)
   })
 
   rutas.post('/internal/replay/:messageId', async (c) => {

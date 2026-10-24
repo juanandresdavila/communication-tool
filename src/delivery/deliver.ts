@@ -60,11 +60,21 @@ export async function intentarEntrega(
   }
 
   const cuerpo = cuerpoDeEntrega(mensaje)
-  const firma = headerDeFirma(
-    deps.secrets(app.deliverySecretEnv),
-    cuerpo,
-    Math.floor(ahora.getTime() / 1000),
-  )
+
+  // Un secreto que falta o no sirve no es una excepción para el llamador: es
+  // un intento fallido más, con su tope y su backoff. Si tirara hacia afuera,
+  // el mensaje volvería al claim cada vez que vence el lease, sin contar
+  // intentos y sin llegar nunca a `failed`.
+  let firma: string
+  try {
+    firma = headerDeFirma(
+      deps.secrets(app.deliverySecretEnv),
+      cuerpo,
+      Math.floor(ahora.getTime() / 1000),
+    )
+  } catch (e) {
+    return marcarIntentoFallido(deps, mensaje, ahora, (e as Error).message)
+  }
 
   const resultado = await deps.delivery.entregar({
     url: app.deliveryUrl,
@@ -79,7 +89,25 @@ export async function intentarEntrega(
     return 'delivered'
   }
 
-  const error = resultado.error ?? `estado ${resultado.status}`
+  return marcarIntentoFallido(
+    deps,
+    mensaje,
+    ahora,
+    resultado.error ?? `estado ${resultado.status}`,
+  )
+}
+
+/**
+ * Cuenta un intento fallido: reintento con backoff, o `failed` si se agotaron.
+ * Lo usan la entrega rechazada, el secreto ilegible y el tick cuando un ítem
+ * tira por una causa inesperada.
+ */
+export async function marcarIntentoFallido(
+  deps: Pick<DeliverDeps, 'inbound'>,
+  mensaje: InboundMessage,
+  ahora: Date,
+  error: string,
+): Promise<'pending' | 'failed'> {
   // +1 porque el intento que acaba de fallar todavía no está contado en la
   // fila: lo contabiliza la marca de resultado, más abajo.
   const espera = proximoIntentoMs(mensaje.deliveryAttempts + 1)

@@ -118,6 +118,17 @@ export function createSchedulesRepo(sql: Sql): SchedulesRepo {
       `
     },
 
+    async marcarSinProxima(id, ahora) {
+      await sql`
+        UPDATE schedules
+        SET active = false,
+            next_run_at = NULL,
+            last_run_at = ${ahora.toISOString()},
+            last_status = 'failed'
+        WHERE id = ${id}
+      `
+    },
+
     async marcarPerdido(id, ahora, proxima) {
       await sql`
         UPDATE schedules

@@ -1,6 +1,11 @@
 import { Hono } from 'hono'
-import { describe, expect, it } from 'vitest'
-import type { Contact, LinkCode } from '../db/ports.js'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type {
+  AppsRepo,
+  Contact,
+  InboundMessagesRepo,
+  LinkCode,
+} from '../db/ports.js'
 import {
   createFakeAppsRepo,
   createFakeBotsRepo,
@@ -23,6 +28,15 @@ import { telegramWebhookRoutes } from './telegram-webhook.js'
 const SECRETO = 'secreto-del-webhook'
 const AHORA = new Date('2026-07-28T12:00:00.000Z')
 
+// El .catch de la entrega loguea con console.error: se silencia y se espía.
+let errorLog: ReturnType<typeof vi.spyOn>
+beforeEach(() => {
+  errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+})
+afterEach(() => {
+  errorLog.mockRestore()
+})
+
 function armar(
   opts: {
     contactos?: Contact[]
@@ -31,6 +45,10 @@ function armar(
     envioFalla?: boolean
     envioColgado?: boolean
     respuestaFalla?: boolean
+    /** El repo de apps rechaza: la entrega tira antes de llegar a la app. */
+    appsFalla?: boolean
+    /** El repo de entrantes rechaza al marcar entregado (la entrega ya salió). */
+    marcarEntregadoFalla?: boolean
     presupuesto?: PresupuestoDeRespuestas
   } = {},
 ) {
@@ -39,7 +57,33 @@ function armar(
   const entregados: string[] = []
   const contacts = createFakeContactsRepo(opts.contactos ?? [])
   const linkCodes = createFakeLinkCodesRepo(opts.codigos ?? [])
-  const inbound = createFakeInboundMessagesRepo([])
+  const inboundFalso = createFakeInboundMessagesRepo([])
+  // Guarda lo que el webhook le pasa a insertIfNew, tal cual lo recibe.
+  const insertados: Parameters<InboundMessagesRepo['insertIfNew']>[0][] = []
+  const inboundBase: InboundMessagesRepo = {
+    ...inboundFalso,
+    async insertIfNew(input) {
+      insertados.push(input)
+      return inboundFalso.insertIfNew(input)
+    },
+  }
+  const inbound: InboundMessagesRepo = opts.marcarEntregadoFalla
+    ? {
+        ...inboundBase,
+        async marcarEntregado() {
+          throw new Error('base caída al marcar entregado')
+        },
+      }
+    : inboundBase
+  const appsBase = createFakeAppsRepo([{ hash: 'h', app: unApp() }])
+  const apps: AppsRepo = opts.appsFalla
+    ? {
+        ...appsBase,
+        async findById() {
+          throw new Error('base caída')
+        },
+      }
+    : appsBase
 
   // waitUntil ejecuta al toque en los tests: la entrega tiene que haber
   // terminado cuando el request vuelve, o las aserciones correrían antes.
@@ -55,7 +99,7 @@ function armar(
       inbound,
       presupuesto:
         opts.presupuesto ?? crearPresupuesto(PRESUPUESTO_POR_DEFECTO),
-      apps: createFakeAppsRepo([{ hash: 'h', app: unApp() }]),
+      apps,
       delivery: {
         async entregar(p) {
           entregados.push(p.deliveryId)
@@ -100,6 +144,8 @@ function armar(
     contacts,
     linkCodes,
     inbound,
+    /** Lo que recibió insertIfNew, en orden. */
+    insertados,
     /** Espera a que termine lo que quedó en waitUntil. */
     async drenar() {
       await Promise.all(pendientes)
@@ -193,10 +239,10 @@ describe('chat no vinculado', () => {
   })
 
   it('la promesa que se programa resuelve aunque el envío falle', async () => {
-    // 🚨 El motivo de este test: el waitUntil de server.ts es `void promesa`,
-    // que NO captura rejections, y sendMessage tira cuando Telegram rechaza.
-    // Sin el .catch del webhook, acá quedaría una unhandled rejection que en
-    // producción no la agarra nadie.
+    // 🚨 El motivo de este test: el .catch se pone en el sitio, que es quien
+    // sabe qué significa que falle esta promesa. server.ts tiene ahora una red
+    // en el adaptador (wait-until-self-host.ts), pero la regla se mantiene.
+    // sendMessage tira cuando Telegram rechaza.
     const { server, drenar } = armar({ envioFalla: true })
 
     await postear(server, update('hola'))
@@ -386,6 +432,48 @@ describe('persistencia y entrega', () => {
     const res = await postear(server, update('hola'))
     await drenar()
     expect(res.status).toBe(200)
+  })
+})
+
+describe('la entrega que tira no queda como rechazo suelto', () => {
+  // 🚨 Ninguno de estos casos usa un secreto faltante como disparador: desde
+  // que la lectura del secreto cuenta como intento fallido ya no tira, y el
+  // test pasaría aunque se sacara el .catch.
+  const VINCULADO = [unContacto({ externalId: '12345', appUserId: 'user-1' })]
+
+  it('si la entrega de un mensaje tira, contesta 200 y no deja rejections sueltas', async () => {
+    const { server, drenar } = armar({ contactos: VINCULADO, appsFalla: true })
+
+    const res = await postear(server, update('hola'))
+
+    expect(res.status).toBe(200)
+    await expect(drenar()).resolves.toBeUndefined()
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('msg-1'))
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('base caída'))
+  })
+
+  it('si la entrega de un toque tira, contesta 200 y no deja rejections sueltas', async () => {
+    const { server, drenar } = armar({ contactos: VINCULADO, appsFalla: true })
+
+    const res = await postear(server, toque())
+
+    expect(res.status).toBe(200)
+    await expect(drenar()).resolves.toBeUndefined()
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('msg-1'))
+  })
+
+  it('si falla marcar entregado, contesta 200 y no deja rejections sueltas', async () => {
+    const { server, entregados, drenar } = armar({
+      contactos: VINCULADO,
+      marcarEntregadoFalla: true,
+    })
+
+    const res = await postear(server, update('hola'))
+
+    expect(res.status).toBe(200)
+    await expect(drenar()).resolves.toBeUndefined()
+    expect(entregados).toEqual(['msg-1'])
+    expect(errorLog).toHaveBeenCalledWith(expect.stringContaining('msg-1'))
   })
 })
 
@@ -603,5 +691,67 @@ describe('/start con código', () => {
 
     expect(enviados).toEqual([])
     expect(entregados).toHaveLength(1)
+  })
+})
+
+/** true si algún string o clave, recorrido entero, trae U+0000 o un surrogate suelto. */
+function tieneSucio(v: unknown): boolean {
+  const sucio = (s: string) => s.includes('\u0000') || !s.isWellFormed()
+  if (typeof v === 'string') return sucio(v)
+  if (Array.isArray(v)) return v.some(tieneSucio)
+  if (v !== null && typeof v === 'object') {
+    return Object.entries(v).some(([k, x]) => sucio(k) || tieneSucio(x))
+  }
+  return false
+}
+
+describe('U+0000 y surrogates sueltos que manda Telegram', () => {
+  // postear() usa JSON.stringify, que escribe el U+0000 como escape; al
+  // parsear, c.req.json() lo devuelve como carácter real: igual que en producción.
+
+  it('un mensaje de un chat no vinculado llega limpio a insertIfNew', async () => {
+    const { server, insertados } = armar()
+
+    const res = await postear(server, update('ho\u0000la'))
+
+    expect(res.status).toBe(200)
+    expect(insertados).toHaveLength(1)
+    expect(tieneSucio(insertados[0])).toBe(false)
+    expect(insertados[0]?.text).toBe('ho\uFFFDla')
+  })
+
+  it('un toque de un chat vinculado llega limpio (callbackData y raw)', async () => {
+    const { server, insertados } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+    })
+
+    const res = await postear(server, toque('x\u0000y'))
+
+    expect(res.status).toBe(200)
+    expect(insertados).toHaveLength(1)
+    expect(tieneSucio(insertados[0])).toBe(false)
+    expect(insertados[0]?.callbackData).toBe('x\uFFFDy')
+    expect(insertados[0]?.raw).not.toBeNull()
+  })
+
+  it('el U+0000 que solo viaja en el raw (from.first_name) también se limpia', async () => {
+    const { server, insertados } = armar({
+      contactos: [unContacto({ externalId: '12345', appUserId: 'user-1' })],
+    })
+    const base = update('hola')
+    const cuerpo = {
+      ...base,
+      message: { ...base.message, from: { id: 12345, first_name: 'Ju\u0000an' } },
+    }
+
+    const res = await postear(server, cuerpo)
+
+    expect(res.status).toBe(200)
+    expect(insertados).toHaveLength(1)
+    expect(insertados[0]?.text).toBe('hola')
+    expect(tieneSucio(insertados[0]?.raw)).toBe(false)
+    expect(insertados[0]?.raw).toMatchObject({
+      message: { from: { first_name: 'Ju\uFFFDan' } },
+    })
   })
 })

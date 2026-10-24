@@ -46,6 +46,7 @@ devuelve `{ messageId, providerMessageId, status }`.
 | Código | Cuándo |
 |---|---|
 | `400 invalid_request` | El cuerpo no valida, o el texto pasa los 4096 caracteres |
+| `413 payload_too_large` | El body pasa los 256 KiB. Vale para todo `/v1` y para `/mcp`, y se chequea después de la API key (sin clave da 401) |
 | `404 not_linked` | Ese `userId` no tiene contacto vinculado |
 | `409 in_progress` | Esa `idempotencyKey` tiene un envío sin cerrar |
 | `500 no_bot` | La app no tiene bot activo en el canal — configuración faltante |
@@ -58,7 +59,8 @@ sin mandar un segundo mensaje. Sin clave no hay deduplicación.
 `{ scheduleId, name, nextRunAt }`. Es alta o actualización por
 `(app, userId, name)`. Un cron o una zona inválidos dan `400 invalid_cron` o
 `400 invalid_timezone` **antes** de guardar: un programado que nunca dispara no
-se descubre hasta que falta el aviso.
+se descubre hasta que falta el aviso. También rechaza con `400 invalid_cron`
+los patrones de un solo disparo (una fecha ISO, o siete campos con año).
 
 Al vencer, comm-tool **no compone el mensaje**. Postea al
 `schedule_callback_url` de la app, firmado con el mismo HMAC de la entrega:
