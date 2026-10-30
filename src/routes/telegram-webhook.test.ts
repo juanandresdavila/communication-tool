@@ -1,5 +1,9 @@
 import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createTelegramClient,
+  type TelegramClient,
+} from '../channels/telegram/client.js'
 import type {
   AppsRepo,
   Contact,
@@ -50,6 +54,8 @@ function armar(
     /** El repo de entrantes rechaza al marcar entregado (la entrega ya salió). */
     marcarEntregadoFalla?: boolean
     presupuesto?: PresupuestoDeRespuestas
+    /** Reemplaza al cliente falso: para mirar el cuerpo que sale a Telegram. */
+    telegram?: TelegramClient
   } = {},
 ) {
   const enviados: { chatId: string; text: string }[] = []
@@ -114,7 +120,7 @@ function armar(
       waitUntil: (p) => {
         pendientes.push(p)
       },
-      telegram: {
+      telegram: opts.telegram ?? {
         ...telegramFalso(),
         async sendMessage(_token, chatId, text) {
           enviados.push({ chatId, text })
@@ -248,6 +254,34 @@ describe('chat no vinculado', () => {
     await postear(server, update('hola'))
 
     await expect(drenar()).resolves.toBeUndefined()
+  })
+})
+
+describe('vista previa de links en las respuestas del webhook', () => {
+  it('el unlinked_message y la respuesta de /vincular salen con la vista previa apagada', async () => {
+    // Con el cliente real: el default lo pone el cliente, y lo que se fija acá
+    // es que el webhook no lo pise. Un unlinked_message con un link no tiene
+    // por qué hacer que Telegram arme una tarjeta para un desconocido.
+    const cuerpos: Record<string, unknown>[] = []
+    const grabador = async (_url: string | URL | Request, init?: RequestInit) => {
+      cuerpos.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return new Response(
+        JSON.stringify({ ok: true, result: { message_id: 9 } }),
+        { status: 200 },
+      )
+    }
+    const { server, drenar } = armar({
+      telegram: createTelegramClient(grabador),
+    })
+
+    await postear(server, update('hola'))
+    await postear(server, update('/vincular ABCDEF'))
+    await drenar()
+
+    expect(cuerpos).toHaveLength(2)
+    for (const cuerpo of cuerpos) {
+      expect(cuerpo.link_preview_options).toEqual({ is_disabled: true })
+    }
   })
 })
 
