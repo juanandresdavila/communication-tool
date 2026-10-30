@@ -230,12 +230,12 @@ grep -cE '^[A-Z0-9_]+="?\[SENSITIVE\]"?$' .env
 
 Cualquier resultado distinto de `0` quiere decir que esas variables no sirven.
 
-**Falla temprano y con nombre.** Un valor así (el marcador `[SENSITIVE]`,
-comillas o corchetes en los bordes, espacios, o menos de 32 caracteres) falla
-**al arrancar** si es `INTERNAL_SECRET` (`parseEnv`) o **en la lectura** si es
-uno de los que nombra la base (`createSecretReader`). El error nombra la
-variable y el motivo, nunca el valor. Ya no llega hasta Telegram ni se ve como
-un 502 que parece problema del proveedor.
+**Falla temprano y con nombre.** Un valor así (la palabra `SENSITIVE`, con o
+sin corchetes, comillas o corchetes en los bordes, espacios, o menos de 32
+caracteres) falla **al arrancar** si es `INTERNAL_SECRET` (`parseEnv`) o **en
+la lectura** si es uno de los que nombra la base (`createSecretReader`). El
+error nombra la variable y el motivo, nunca el valor. Ya no llega hasta
+Telegram ni se ve como un 502 que parece problema del proveedor.
 
 Consecuencia práctica: con secretos generados a mano se prueba local todo lo
 que firma o verifica un secreto (`/v1/messages`, el webhook, la entrega). Lo que

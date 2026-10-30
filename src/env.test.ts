@@ -30,7 +30,13 @@ describe('parseEnv', () => {
     )
   })
 
-  it.each(['[SENSITIVE]', '"[SENSITIVE]"', 's', 'a'.repeat(31)])(
+  it.each([
+    '[SENSITIVE]',
+    '"[SENSITIVE]"',
+    's',
+    'a'.repeat(31),
+    `SENSITIVE${'a'.repeat(32)}`,
+  ])(
     'parseEnv rechaza INTERNAL_SECRET=%j',
     (valor) => {
       expect(() =>
