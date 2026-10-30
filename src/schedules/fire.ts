@@ -65,7 +65,9 @@ export async function dispararProgramado(
 
   // Sin el secreto no hay con qué firmar: es un fallo del disparo, no una
   // excepción. Se restaura la hora para que la gracia lo dé por perdido en
-  // vez de dejar el programado reclamado en loop.
+  // vez de dejar el programado reclamado en loop. El motivo va al log: sin él
+  // el programado queda `failed` sin rastro. El lector nombra la variable,
+  // nunca el valor.
   let firma: string
   try {
     firma = headerDeFirma(
@@ -73,7 +75,9 @@ export async function dispararProgramado(
       cuerpo,
       Math.floor(ahora.getTime() / 1000),
     )
-  } catch {
+  } catch (e) {
+    const motivo = e instanceof Error ? e.message : String(e)
+    console.error(`programado ${schedule.id}: no se pudo firmar: ${motivo}`)
     await deps.schedules.marcarFallido(schedule.id, ahora, agendado)
     return 'failed'
   }

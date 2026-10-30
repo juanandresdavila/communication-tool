@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { EntregaResultado } from '../delivery/client.js'
 import {
   createFakeSchedulesRepo,
@@ -121,6 +121,44 @@ describe('dispararProgramado', () => {
     const tras = await schedules.claimVencidos(AHORA, 25)
     expect(tras[0]?.agendadoPara).toBe(AGENDADO)
     expect(tras[0]?.schedule.lastStatus).toBe('failed')
+  })
+
+  it('un secreto ilegible deja el motivo en el log', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { deps } = armar({
+        secretos: () => {
+          throw new Error(
+            'Falta la variable de entorno DELIVERY_SECRET_GYM, referenciada desde la base',
+          )
+        },
+      })
+      await dispararProgramado(deps, unSchedule(), AGENDADO)
+
+      expect(errorLog).toHaveBeenCalledTimes(1)
+      const linea = String(errorLog.mock.calls[0]?.[0])
+      expect(linea).toContain('sch-1')
+      expect(linea).toContain('DELIVERY_SECRET_GYM')
+    } finally {
+      errorLog.mockRestore()
+    }
+  })
+
+  it('un throw que no es Error tampoco tumba el catch de la firma', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { deps } = armar({
+        secretos: () => {
+          throw null
+        },
+      })
+      expect(await dispararProgramado(deps, unSchedule(), AGENDADO)).toBe(
+        'failed',
+      )
+      expect(String(errorLog.mock.calls[0]?.[0])).toContain('null')
+    } finally {
+      errorLog.mockRestore()
+    }
   })
 
   it('se da por perdido pasada la ventana de gracia', async () => {
