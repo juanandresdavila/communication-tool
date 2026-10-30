@@ -22,6 +22,8 @@ const INVALIDOS = [
   `${BUENO}\n`,
   FILTRABLE,
   `${FILTRABLE}[SENSITIVE]${FILTRABLE}${FILTRABLE}`,
+  // Sin corchetes: largo, sin comillas ni espacios. Solo lo caza la palabra.
+  `SENSITIVE${BUENO}`,
 ]
 
 describe('motivoSecretoInvalido', () => {
@@ -43,6 +45,9 @@ describe('motivoSecretoInvalido', () => {
 
   it('devuelve el motivo exacto de cada regla, en orden', () => {
     expect(motivoSecretoInvalido('[SENSITIVE]')).toBe(
+      'contiene el marcador SENSITIVE de Vercel',
+    )
+    expect(motivoSecretoInvalido(`SENSITIVE${BUENO}`)).toBe(
       'contiene el marcador SENSITIVE de Vercel',
     )
     expect(motivoSecretoInvalido(`"${BUENO}"`)).toBe(

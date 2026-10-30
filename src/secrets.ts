@@ -14,7 +14,8 @@ export const LARGO_MINIMO_SECRETO = 32
 export function motivoSecretoInvalido(valor: string): string | null {
   // Vercel reemplaza por `[SENSITIVE]` las variables marcadas como sensibles
   // al hacer `vercel env pull`: queda un valor que parece un secreto y no lo es.
-  if (valor.includes('[SENSITIVE]')) {
+  // Se busca la palabra sola: sin corchetes (editados a mano) también cae.
+  if (valor.includes('SENSITIVE')) {
     return 'contiene el marcador SENSITIVE de Vercel'
   }
   if (/^["'[]|["'\]]$/.test(valor)) {
